@@ -17,6 +17,8 @@
  */
 
 import type { Settings } from './types';
+import { authorityOf } from './authority';
+import type { AuthorityInfo } from './authority';
 import { getText, runtime } from './transport';
 import { dedupeKey, hostOf, truncate } from './utils';
 
@@ -26,6 +28,8 @@ export interface Evidence {
   url: string;
   publisher: string;
   snippet: string;
+  /** 来源命中权威名录时的性质，用来给模型加权、并在界面上打标 */
+  authority?: AuthorityInfo;
 }
 
 export interface ResearchResult {
@@ -486,10 +490,15 @@ export async function research(
     return { evidence: [], queries, engines: [...engines], hits: 0, pages: 0, notes };
   }
 
-  // 抓正文时优先覆盖不同站点，避免 6 篇全来自同一家
+  // 抓正文时权威来源优先，其次尽量覆盖不同站点，避免 6 篇全来自同一家
+  const ordered = hits
+    .map((hit, i) => ({ hit, i, score: authorityOf(hit.url)?.score ?? 0.5 }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map((x) => x.hit);
+
   const targets: Hit[] = [];
   const hostSeen = new Set<string>();
-  for (const hit of hits) {
+  for (const hit of ordered) {
     if (targets.length >= plan.fetch) break;
     const host = hostOf(hit.url);
     if (hostSeen.has(host) && hits.length > plan.fetch * 2) continue;
@@ -533,6 +542,7 @@ export async function research(
       url: hit.url,
       publisher: hostOf(hit.url),
       snippet: truncate(snippet || hit.snippet || hit.title, 340),
+      authority: authorityOf(hit.url) ?? undefined,
     });
   };
 
@@ -623,15 +633,19 @@ export async function researchClaims(
       url: hit.url,
       publisher: hostOf(hit.url),
       snippet: truncate(text ? bestExcerpt(text, hit.query ?? queries[0]) : hit.snippet || hit.title, 340),
+      authority: authorityOf(hit.url) ?? undefined,
     };
   });
 }
 
-/** 把证据整理成给模型的紧凑文本：每条一行来源 + 一段摘录 */
+/** 把证据整理成给模型的紧凑文本：每条一行来源 + 一段摘录 + 权威标记 */
 export function evidenceBlock(evidence: Evidence[]): string {
   if (!evidence.length) return '';
   return evidence
-    .map((e) => `[${e.sid}] ${e.title}\nURL: ${e.url}\n摘录: ${e.snippet}`)
+    .map((e) => {
+      const tag = e.authority ? `·${e.authority.label}` : '·一般网页';
+      return `[${e.sid}${tag}] ${e.title}\nURL: ${e.url}\n摘录: ${e.snippet}`;
+    })
     .join('\n\n');
 }
 

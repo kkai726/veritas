@@ -1,3 +1,5 @@
+import type { AuthorityInfo } from './authority';
+
 export type ProviderId = 'deepseek' | 'mimo' | 'glm' | 'kimi' | 'openai' | 'custom';
 
 /** 单个服务商的连接配置（Key 按服务商分别缓存） */
@@ -29,6 +31,8 @@ export interface Source {
   url: string;
   publisher: string;
   cited: number[];
+  /** 命中内置权威名录时的性质与权重（见 src/lib/authority.ts） */
+  authority?: AuthorityInfo;
 }
 
 export type ClaimVerdict = 'supported' | 'partial' | 'unsupported' | 'contradicted' | 'unknown';
@@ -72,6 +76,10 @@ export interface ReportMeta {
   evidence?: EvidenceStat;
   /** 分阶段耗时，报告页会显示检索 / 模型各花了多久 */
   timings?: { extractMs: number; researchMs: number; modelMs: number };
+  /** 来源权威度统计：tier1 = 权威度 ≥ 0.9 的来源条数 */
+  authority?: { total: number; tier1: number; cited: number };
+  /** 被核查的原文自身来自权威域名时记下来 */
+  sourceAuthority?: AuthorityInfo;
 }
 
 export interface Report {

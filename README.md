@@ -4,7 +4,7 @@
 
 **贴入一段文字，或者一个链接。逐段取证，给出可信度与来源。**
 
-应用内检索 · 可暂停 · 多任务后台运行 · 自带模型 Key · 输出整洁 Markdown
+应用内检索 · 来源权威度加权 · 可暂停 · 多任务后台运行 · 自带模型 Key · 输出整洁 Markdown
 
 [下载客户端](#下载) · [查看原理](#它是怎么核查的) · [速度](#速度实测) · [从源码构建](#从源码构建) · [Releases](https://github.com/kkai726/veritas/releases)
 
@@ -37,9 +37,9 @@ Veritas 不下一句话结论，它把一段话拆开看：
 
 | 平台 | 文件 | 大小 | 说明 |
 | :--- | :--- | :--- | :--- |
-| Windows 10/11 x64 | [`Veritas-Setup-1.2.1-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.2.1/Veritas-Setup-1.2.1-x64.exe) | 115.98 MB | NSIS 安装版，可选安装目录、生成桌面快捷方式 |
-| Windows 10/11 x64 | [`Veritas-Portable-1.2.1-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.2.1/Veritas-Portable-1.2.1-x64.exe) | 105.57 MB | 免安装单文件，双击即用，放进 U 盘也能跑 |
-| Android 7.0+ (arm64) | [`Veritas-1.2.1-android.apk`](https://github.com/kkai726/veritas/releases/download/v1.2.1/Veritas-1.2.1-android.apk) | 206 KB | `minSdk 24` / `targetSdk 35`，原生 WebView 壳，不依赖 Capacitor |
+| Windows 10/11 x64 | [`Veritas-Setup-1.2.2-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.2.2/Veritas-Setup-1.2.2-x64.exe) | 115.98 MB | NSIS 安装版，可选安装目录、生成桌面快捷方式 |
+| Windows 10/11 x64 | [`Veritas-Portable-1.2.2-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.2.2/Veritas-Portable-1.2.2-x64.exe) | 105.57 MB | 免安装单文件，双击即用，放进 U 盘也能跑 |
+| Android 7.0+ (arm64) | [`Veritas-1.2.2-android.apk`](https://github.com/kkai726/veritas/releases/download/v1.2.2/Veritas-1.2.2-android.apk) | 210 KB | `minSdk 24` / `targetSdk 35`，原生 WebView 壳，不依赖 Capacitor |
 | 任意 Linux / NAS | [`ghcr.io/kkai726/veritas:latest`](https://github.com/kkai726/veritas/pkgs/container/veritas) | 20 MB | Nginx 托管静态站，自托管网页版（见 [自托管](#自托管镜像)） |
 
 安装前的两件事，都是系统层面的，不是程序问题：
@@ -48,6 +48,34 @@ Veritas 不下一句话结论，它把一段话拆开看：
 - **Android** 的 APK 用调试证书签名（`CN=Veritas, OU=Dev`），安装时需允许「未知来源」，且不能与后续正式签名的版本覆盖安装。
 
 每个产物的 SHA-256 都写在 [发布说明](https://github.com/kkai726/veritas/releases) 里，下载后可以自行核对。
+
+## 来源权威度（v1.2.2）
+
+内置了一份 **180 个域名**的权威名录，数据来自《全球权威论文收录平台 · 学术媒体 · 权威机构名录》（195 条，去掉检索工具与聚合站），按性质给 0–1 的权重：
+
+| 权重 | 类型 | 例子 |
+| :--- | :--- | :--- |
+| 0.98 | 同行评议期刊 · 政府 / 国际组织 | Nature、Science、NEJM、The Lancet、WHO、NIH、NLM |
+| 0.9x | 引文索引 · 学会 · 国家级机构 · 出版商 | PubMed、Crossref、IEEE、ACM、中科院文献情报中心、科睿唯安 |
+| 0.7x | 科学媒体 | Nature News、ScienceDaily、科学网、知识分子 |
+| 0.6x | 预印本（未经同行评审） | arXiv、bioRxiv、medRxiv、ChinaXiv |
+| 0.3x | 科研工具与学术社交 | ORCID、ResearchGate、Zotero |
+
+命中名录后有三处变化：
+
+1. **检索**：抓正文时权威来源优先，名额有限时先读它们；
+2. **判断**：证据块里每条都会标出来源性质（`[E3·同行评议期刊]`），模型据此加权——预印本最多给「部分支持」，与普通媒体冲突时以权威来源为准并写明分歧；
+3. **报告**：来源卡片打标签，主张后面加盾牌标识，统计条与 Markdown 表头多一项「权威来源」。
+
+如果你核查的**原文本身**来自名录内的机构（比如一个 `who.int` 的链接），报告顶部会标出「原文出处 · 政府 / 国际组织」，模型也会被告知这一点——但仍要求逐条对照证据，因为权威机构的新闻稿同样可能夸大结论。
+
+两点边界：名录按**域名**判断，`nature.com/news` 的新闻与 `nature.com` 上的论文同归「同行评议期刊」；它只回答「来源是谁」，不保证「这一条说得对」。所以权重只影响排序与提示，不改写判定，也不直接改动分数。
+
+名录是 `data/authority-registry.xlsx` + `src/lib/authority.ts`（自动生成）。要增删条目，改脚本里的 `TIERS` / `SUPPLEMENT` 后重跑：
+
+```bash
+python scripts/gen-authority.py
+```
 
 ## 修复了什么（v1.2.1）
 
@@ -283,7 +311,7 @@ npm run build            # tsc --noEmit && vite build
 npm run app:win          # electron-builder --win → release/
 ```
 
-产物是 `release/Veritas Setup 1.2.1.exe`（安装版）与 `release/Veritas 1.2.1.exe`（免安装）。开发时用 `npm run electron`（先构建再开窗口）。
+产物是 `release/Veritas Setup 1.2.2.exe`（安装版）与 `release/Veritas 1.2.2.exe`（免安装）。开发时用 `npm run electron`（先构建再开窗口）。
 
 打包时的两个环境坑，如果脚本跑不起来可以先看这里：
 

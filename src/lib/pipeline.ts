@@ -1,4 +1,5 @@
 import { extractFromUrl } from './extract';
+import { authorityOf } from './authority';
 import { ParseError, extractJson, looksLikeJson } from './parse';
 import { buildRepairPrompt, buildSystemPrompt, buildUserPrompt } from './prompt';
 import { runModel } from './providers';
@@ -6,7 +7,7 @@ import { buildReport, toVerdict } from './report';
 import { evidenceBlock, research, researchClaims } from './research';
 import { configOf, presetOf } from './settings';
 import type { Report, Settings } from './types';
-import { countChars, dedupeKey, looksLikeUrl, normalizeUrl } from './utils';
+import { countChars, dedupeKey, hostOf, looksLikeUrl, normalizeUrl } from './utils';
 
 export type Stage = 'verify' | 'extract' | 'research' | 'analyze' | 'compose';
 
@@ -139,9 +140,12 @@ export async function factCheck({ settings, input, mode, onStage, signal, checkp
   const researchMs = Math.round(performance.now() - tResearch);
   const hasEvidence = found.evidence.length > 0;
 
+  const srcInfo = sourceUrl ? authorityOf(sourceUrl) : null;
   const system = buildSystemPrompt(settings, {
     hasEvidence,
     modelSearch: !hasEvidence && preset.supportsSearch,
+    sourceAuthority:
+      srcInfo && sourceUrl ? { host: hostOf(sourceUrl), label: srcInfo.label } : undefined,
   });
   const user = buildUserPrompt({
     text,

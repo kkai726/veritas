@@ -1,4 +1,5 @@
 import type { RawCitation } from './providers';
+import { authorityOf } from './authority';
 import { buildMarkdown } from './markdown';
 import type { Claim, ClaimVerdict, Paragraph, ProviderId, Report, Source } from './types';
 import { clamp, countChars, dedupeKey, hostOf, truncate } from './utils';
@@ -262,6 +263,19 @@ export function buildReport(input: BuildInput): Report {
     p.sourceIds = Array.from(new Set(p.sourceIds.map((id) => idMap.get(id) ?? id)));
   }
 
+  // 标出命中权威名录的来源（同行评议期刊 / 政府机构 / 引文索引…）
+  for (const s of sources) {
+    const info = authorityOf(s.url);
+    if (info) s.authority = info;
+  }
+
+  const authorityStat = {
+    total: sources.filter((s) => s.authority).length,
+    tier1: sources.filter((s) => (s.authority?.score ?? 0) >= 0.9).length,
+    cited: sources.filter((s) => s.authority && s.cited.length > 0).length,
+  };
+  const sourceAuthority = sourceUrl ? authorityOf(sourceUrl) ?? undefined : undefined;
+
   const allClaims = paragraphs.flatMap((p) => p.claims);
   const weighted = paragraphs.reduce((acc, p) => acc + p.score * Math.max(1, p.claims.length), 0);
   const weight = paragraphs.reduce((acc, p) => acc + Math.max(1, p.claims.length), 0);
@@ -309,6 +323,8 @@ export function buildReport(input: BuildInput): Report {
       wordCount: allClaims.length,
       chars: countChars(input.text),
       evidence: input.evidenceStat,
+      authority: authorityStat,
+      sourceAuthority,
     },
     markdown: '',
     raw: input.raw,

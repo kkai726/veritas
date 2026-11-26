@@ -35,14 +35,23 @@ const DEPTH_RULE: Record<Settings['depth'], string> = {
 
 export function buildSystemPrompt(
   settings: Settings,
-  opts: { hasEvidence: boolean; modelSearch: boolean },
+  opts: {
+    hasEvidence: boolean;
+    modelSearch: boolean;
+    /** 被核查的原文本身来自权威域名时传进来 */
+    sourceAuthority?: { host: string; label: string };
+  },
 ): string {
   const evidenceRule = opts.hasEvidence
     ? `本次核查的检索已经由应用完成，下方 <evidence> 里是检索到的公开来源摘录（编号 E1、E2…）。
 - 证据块是**节选**：只列出最相关的若干条，不代表检索到的全部结果；没被列出的内容不等于查不到。
 - 判断以这些证据为依据，不得声称自己联网检索过，也不要引入证据块之外的链接。
+- 编号后面标了来源性质：同行评议期刊、学科索引、引文索引、期刊评价、政府/国际组织、学会、国家级机构、出版商、科学媒体、预印本、一般网页。
+  · **权威度高的来源**（同行评议期刊、政府/国际组织、学会、国家级机构、引文索引）与主张一致时，构成更强的支持；它与普通媒体冲突时以它为准，并在 note 里写明分歧。
+  · **预印本**未经同行评审，可作线索，但不要给「支持」，最多「部分支持」并在 note 注明。
+  · **一般网页 / 科学媒体**属辅助来源：与其他来源相互印证时有效，单独一条时用「部分支持」。
 - 一条主张的数字、主体、时间与某条证据一致就算「支持」（措辞不同不影响判断）；部分细节有出入用「部分支持」。
-- 引用时把证据块里对应的 URL **原样复制**到 claim.sources；一条主张最多挂 2 条证据。
+- 引用时把证据块里对应的 URL **原样复制**到 claim.sources；一条主张最多挂 2 条证据，优先挂权威度高的。
 - 只有证据块里**确实找不到与这条主张相关的任何来源**时，才标「缺证据 / 无法核实」。
   不要因为证据只覆盖了一部分、或没有原句照抄，就把它判成无据；判断依据不足时优先挂最相关的那条来源再说明差异。`
     : opts.modelSearch
@@ -67,7 +76,12 @@ ${SCHEMA}
 
 ## 本次参数
 - 核查深度：${DEPTH_RULE[settings.depth]}
-- 段落按原文自然段顺序编号，paragraph.text 尽量保留原文表述，便于用户对照。`;
+- 段落按原文自然段顺序编号，paragraph.text 尽量保留原文表述，便于用户对照。${
+    opts.sourceAuthority
+      ? `
+- 原文来源：${opts.sourceAuthority.host}（内置权威名录：${opts.sourceAuthority.label}）。这类机构发布的技术性陈述可给予较高的初始信任；但具体数字、时间、因果与结论强度仍要逐条对照证据——权威机构的新闻稿与摘要同样可能夸大结果。`
+      : ''
+  }`;
 }
 
 export function buildUserPrompt(payload: {

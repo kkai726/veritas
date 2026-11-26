@@ -12,10 +12,12 @@ import {
   HelpCircle,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
   Timer,
   XCircle,
 } from 'lucide-react';
 import type { Claim, ClaimVerdict, Paragraph, Report, Source } from '../lib/types';
+import type { AuthorityInfo } from '../lib/authority';
 import { VERDICT_LABEL, bandOf } from '../lib/types';
 import { faviconOf, formatElapsed, formatTime, hostOf } from '../lib/utils';
 import { ScoreRing } from './ScoreRing';
@@ -68,9 +70,20 @@ function CiteLinks({ ids, sources }: { ids: number[]; sources: Source[] }) {
   );
 }
 
+function bestAuthority(claim: Claim, sources: Source[]): AuthorityInfo | undefined {
+  return claim.sourceIds
+    .map((id) => sources.find((s) => s.id === id)?.authority)
+    .reduce<AuthorityInfo | undefined>(
+      (best, cur) => (cur && (!best || cur.score > best.score) ? cur : best),
+      undefined,
+    );
+}
+
 function ClaimRow({ claim, sources }: { claim: Claim; sources: Source[] }) {
   const Icon = VERDICT_ICON[claim.verdict];
   const noSource = claim.sourceIds.length === 0;
+  const authority = bestAuthority(claim, sources);
+  const strong = authority && authority.score >= 0.9;
   return (
     <li className={`claim claim--${VERDICT_TONE[claim.verdict]}`}>
       <Icon className="claim-icon" size={15} strokeWidth={1.9} />
@@ -78,6 +91,12 @@ function ClaimRow({ claim, sources }: { claim: Claim; sources: Source[] }) {
         <p className="claim-text">
           {claim.text}
           <CiteLinks ids={claim.sourceIds} sources={sources} />
+          {strong && (
+            <span className="claim-authority" title={`引用了${authority.label}级别的来源`}>
+              <ShieldCheck size={12} strokeWidth={2} />
+              {authority.label}
+            </span>
+          )}
         </p>
         {claim.note && <p className="claim-note">{claim.note}</p>}
         {noSource && (claim.verdict === 'unsupported' || claim.verdict === 'unknown') && (
@@ -135,6 +154,11 @@ function SourceCard({ source }: { source: Source }) {
           {source.cited.length ? ` · 第 ${source.cited.join('、')} 段` : ' · 检索命中'}
         </span>
       </span>
+      {source.authority && (
+        <span className={`src-badge src-badge--${source.authority.kind}`} title={`权威度 ${source.authority.score}`}>
+          {source.authority.label}
+        </span>
+      )}
       <ExternalLink className="source-link" size={13} />
     </a>
   );
@@ -206,6 +230,7 @@ export function ReportView({ report, onReset, onRerun, demo = false, initialView
               : report.meta.searchUsed
                 ? ' · 模型自带检索'
                 : ' · 无外部来源'}
+            {report.meta.authority?.tier1 ? ` · 权威来源 ${report.meta.authority.tier1} 条` : ''}
             {' · '}
             {formatTime(report.meta.createdAt)}
             {' · '}
@@ -226,6 +251,12 @@ export function ReportView({ report, onReset, onRerun, demo = false, initialView
               </>
             )}
           </p>
+          {report.meta.sourceAuthority && (
+            <p className="authority-badge" title="被核查的原文来自内置权威名录中的机构">
+              <ShieldCheck size={12} strokeWidth={2.2} />
+              原文出处 · {report.meta.sourceAuthority.label}
+            </p>
+          )}
           <p className={`tldr tldr--${band.tone}`}>{report.tldr}</p>
 
           <div className="stat-strip">
@@ -245,6 +276,12 @@ export function ReportView({ report, onReset, onRerun, demo = false, initialView
               <span className="stat-num">{citedCount}</span>
               <span className="stat-label">直接引用</span>
             </div>
+            {report.meta.authority && report.meta.authority.tier1 > 0 && (
+              <div className="stat">
+                <span className="stat-num">{report.meta.authority.tier1}</span>
+                <span className="stat-label">权威来源</span>
+              </div>
+            )}
           </div>
         </div>
 

@@ -91,6 +91,14 @@ export function buildMarkdown(data: ReportData): string {
     `| 判定分布 | 有据支持 ${counts.supported} · 部分支持 ${counts.partial} · 缺乏证据 ${counts.unsupported} · 与证据矛盾 ${counts.contradicted} · 无法核实 ${counts.unknown} |`,
   );
   out.push(`| 引用来源 | ${data.sources.length} 条 · ${domains.size} 个站点 |`);
+  if (meta.authority?.total) {
+    out.push(
+      `| 权威来源 | 命中名录 ${meta.authority.total} 条 · 权威度 ≥ 0.9 共 ${meta.authority.tier1} 条 · 已被引用 ${meta.authority.cited} 条 |`,
+    );
+  }
+  if (meta.sourceAuthority) {
+    out.push(`| 原文出处 | 命中权威名录：${meta.sourceAuthority.label} |`);
+  }
   out.push(`| 核查模型 | ${meta.providerName} · ${meta.model} |`);
   const ev = meta.evidence;
   out.push(
@@ -117,7 +125,8 @@ export function buildMarkdown(data: ReportData): string {
     data.sources.forEach((s) => {
       const used = s.cited.length ? ` · 用于第 ${s.cited.join('、')} 段` : '';
       const publisher = s.publisher ? ` — ${clean(s.publisher)}` : '';
-      out.push(`${s.id}. ${sourceLabel(s)}${publisher}${used}`);
+      const rank = s.authority ? ` · ${s.authority.label}` : '';
+      out.push(`${s.id}. ${sourceLabel(s)}${publisher}${rank}${used}`);
     });
     out.push('');
   }
