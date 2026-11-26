@@ -1,8 +1,14 @@
-name: Deploy to GitHub Pages
+name: Deploy site to GitHub Pages
+
+# 发布的是 site/ 下的项目介绍页，不是应用本身。
+# 应用只在本地 / 客户端运行，线上不提供核查服务。
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 permissions:
@@ -19,16 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
 
   deploy:
     needs: build
