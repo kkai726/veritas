@@ -22,6 +22,7 @@ interface Props {
   report: Report;
   onReset: () => void;
   demo?: boolean;
+  initialView?: 'report' | 'markdown';
 }
 
 const VERDICT_TONE: Record<ClaimVerdict, string> = {
@@ -149,8 +150,8 @@ function MarkdownPanel({ report, onCopy, copied }: { report: Report; onCopy: () 
   );
 }
 
-export function ReportView({ report, onReset, demo = false }: Props) {
-  const [view, setView] = useState<'report' | 'markdown'>('report');
+export function ReportView({ report, onReset, demo = false, initialView = 'report' }: Props) {
+  const [view, setView] = useState<'report' | 'markdown'>(initialView);
   const [copied, setCopied] = useState(false);
   const band = bandOf(report.overallScore);
 

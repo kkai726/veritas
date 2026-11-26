@@ -109,7 +109,12 @@ export default function App() {
 
       <main className={`shell ${phase === 'idle' ? 'shell--idle' : ''}`}>
         {phase === 'done' && report ? (
-          <ReportView report={report} onReset={reset} demo={isDemo} />
+          <ReportView
+            report={report}
+            onReset={reset}
+            demo={isDemo}
+            initialView={new URLSearchParams(window.location.search).get('view') === 'markdown' ? 'markdown' : 'report'}
+          />
         ) : phase === 'running' ? (
           <Processing
             stage={stage}
