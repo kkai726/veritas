@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "type": "module",
   "description": "AI 事实核查工作台 — 逐段取证，输出可信度评分与 Markdown 报告",
+  "homepage": "https://kkai726.github.io/veritas/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kkai726/veritas.git"
+  },
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -11,7 +17,7 @@
     "typecheck": "tsc --noEmit",
     "electron": "npm run build && electron .",
     "app:win": "npm run build && electron-builder --win",
-    "cap:sync": "npm run build && cap sync android"
+    "app:android": "npm run build && cd android && ./build.sh"
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
