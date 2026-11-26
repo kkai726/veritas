@@ -38,7 +38,7 @@ Veritas 不下一句话结论，它把一段话拆开看：
 | 平台 | 文件 | 大小 | 说明 |
 | :--- | :--- | :--- | :--- |
 | Windows 10/11 x64 | [`Veritas-Setup-1.2.0-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-Setup-1.2.0-x64.exe) | 115.98 MB | NSIS 安装版，可选安装目录、生成桌面快捷方式 |
-| Windows 10/11 x64 | [`Veritas-Portable-1.2.0-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-Portable-1.2.0-x64.exe) | 105.57 MB | 免安装单文件，双击即用，放进 U 盘也能跑 |
+| Windows 10/11 x64 | [`Veritas-Portable-1.2.0-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-Portable-1.2.0-x64.exe) | 105.56 MB | 免安装单文件，双击即用，放进 U 盘也能跑 |
 | Android 7.0+ (arm64) | [`Veritas-1.2.0-android.apk`](https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-1.2.0-android.apk) | 206 KB | `minSdk 24` / `targetSdk 35`，原生 WebView 壳，不依赖 Capacitor |
 | 任意 Linux / NAS | [`ghcr.io/kkai726/veritas:latest`](https://github.com/kkai726/veritas/pkgs/container/veritas) | 20 MB | Nginx 托管静态站，自托管网页版（见 [自托管](#自托管镜像)） |
 
