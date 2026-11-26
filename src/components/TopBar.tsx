@@ -1,0 +1,48 @@
+import { Github, Settings2 } from 'lucide-react';
+import { presetOf } from '../lib/settings';
+import type { Settings } from '../lib/types';
+
+interface Props {
+  settings: Settings;
+  onOpenSettings: () => void;
+}
+
+export function TopBar({ settings, onOpenSettings }: Props) {
+  const preset = presetOf(settings.provider);
+  return (
+    <header className="topbar">
+      <div className="topbar-inner">
+        <a className="brand" href="./" aria-label="Veritas 首页">
+          <span className="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <path d="M12 2.6 21.4 12 12 21.4 2.6 12Z" stroke="currentColor" strokeWidth="1.4" />
+              <path d="M12 7.2 16.8 12 12 16.8 7.2 12Z" fill="currentColor" opacity=".9" />
+            </svg>
+          </span>
+          <span className="brand-text">
+            <span className="brand-name">veritas</span>
+            <span className="brand-tag">事实核查台</span>
+          </span>
+        </a>
+
+        <div className="topbar-right">
+          <button className="model-chip" onClick={onOpenSettings} type="button">
+            <span className={`dot ${settings.apiKey ? 'dot--on' : 'dot--off'}`} />
+            <span className="model-chip-name">{preset.name}</span>
+            <span className="model-chip-model">{settings.model || '未选择模型'}</span>
+            <Settings2 size={13} strokeWidth={1.8} />
+          </button>
+          <a
+            className="icon-btn"
+            href="https://github.com/kkai726/veritas"
+            target="_blank"
+            rel="noreferrer noopener"
+            aria-label="GitHub"
+          >
+            <Github size={16} strokeWidth={1.8} />
+          </a>
+        </div>
+      </div>
+    </header>
+  );
+}

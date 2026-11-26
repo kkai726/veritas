@@ -1,0 +1,174 @@
+<div align="center">
+
+# Veritas
+
+**贴入一段文字，或者一个链接。逐段取证，给出可信度与来源。**
+
+纯前端 · 自带模型 Key · 不经过任何中间服务器 · 输出整洁 Markdown
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-1c4739.svg)](./LICENSE)
+[![Vite](https://img.shields.io/badge/Vite-6-646cff.svg)](https://vite.dev)
+[![React](https://img.shields.io/badge/React-19-149eca.svg)](https://react.dev)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-1c4739.svg)](#参与贡献)
+
+<img src="./docs/screenshot-home.png" alt="Veritas 首页" width="880" />
+
+</div>
+
+---
+
+## 它解决什么问题
+
+大多数「AI 事实核查」给出的是一句结论：真、假、或「需要更多信息」。但真实世界的文本是混合的——同一段话里，有的数字准确，有的因果被夸大，有的引述被张冠李戴。
+
+Veritas 不做一句话判决，它做的事是：
+
+1. **拆段** —— 把长文按自然段切开，逐段判断这段里有没有可核实的事实性主张；
+2. **取证** —— 通过所选模型的联网能力检索公开来源（官方公告、论文、监管文件、主流媒体）；
+3. **比对** —— 把每条主张和证据并排放，标出「支持 / 部分支持 / 缺乏证据 / 与证据矛盾 / 无法核实」；
+4. **成文** —— 输出可信度百分比、逐段分析、可点击的来源清单，以及一份排版整洁的 Markdown 报告。
+
+<div align="center">
+<img src="./docs/screenshot-report.png" alt="核查报告" width="880" />
+</div>
+
+## 特性
+
+- **逐段核查**：每段独立评分、独立结论，附原文引用，方便对照修改。
+- **每条主张挂来源**：主张级别的引用编号，点击直达原文；没有来源时明确标注「无法核实」，而不是编一个链接。
+- **可信度 0–100**：环形评分 + 五档判定，段落级进度条，一眼看出问题集中在哪。
+- **链接读取**：粘贴 URL 自动抓正文（Jina Reader 优先，公共代理 + 浏览器解析兜底）。
+- **Markdown 报告**：一键复制 / 下载 `.md`，含结论表、逐段分析、来源清单、核查局限，可直接贴进文档或 PR。
+- **自带模型**：OpenAI、Gemini、Perplexity、OpenRouter、DeepSeek，以及任意 OpenAI 兼容网关。Key 存在你自己的浏览器里。
+- **深度可调**：快速 / 标准 / 深度三档，控制拆段数量与检索强度，兼顾成本。
+- **零后端**：静态站点即可运行，`npm run build` 产出纯静态文件，扔到任何地方都能用。
+
+## 快速开始
+
+```bash
+git clone https://github.com/kkai726/veritas.git
+cd veritas
+npm install
+npm run dev      # http://localhost:5173
+```
+
+打开页面右上角的「模型与检索」，选服务商、填模型名和 API Key，保存即可开始核查。
+没有 Key 也可以先点「示例报告」看看输出长什么样。
+
+构建与预览：
+
+```bash
+npm run build
+npm run preview
+```
+
+## 支持的模型
+
+| 服务商 | 默认模型 | 联网方式 | 说明 |
+| :--- | :--- | :--- | :--- |
+| OpenAI | `gpt-4.1` | Responses API `web_search` 工具 | 来源取自官方 `url_citation` 标注，最稳 |
+| Google Gemini | `gemini-2.5-flash` | Google Search grounding | 来源取自 `groundingMetadata` |
+| Perplexity | `sonar-pro` | Sonar 实时检索 | 返回 `citations` / `search_results` |
+| OpenRouter | `openai/gpt-4.1` | 模型名加 `:online` | 一个 Key 打通多家模型 |
+| DeepSeek | `deepseek-chat` | 无 | 仅做知识层面的一致性核对 |
+| 自定义 | — | 取决于网关 | 兼容 `/chat/completions` 的自建网关 |
+
+> 所有请求由浏览器直接发往服务商。若某家服务商不允许浏览器跨域调用，可改用 OpenRouter，或把请求指向你自己的网关（「自定义」服务商）。
+
+## 工作原理
+
+```
+输入文本 / URL
+   │
+   ├─ URL  →  Jina Reader → 失败则公共代理 + 正文抽取
+   │
+   ├─ 构造核查指令（核查纪律 + 段落深度 + JSON Schema）
+   │
+   ├─ 调用模型（带联网工具）→ 正文 + 真实检索到的来源列表
+   │
+   ├─ JSON 解析（容错：代码围栏 / 尾逗号 / 截断）→ 失败则请求模型自修复一次
+   │
+   └─ 归一化 → 去重来源、编号、段落↔来源映射 → 渲染 + 生成 Markdown
+```
+
+关键设计：**报告里的链接只来自服务商真实返回的检索结果，或模型明确给出的 URL**；模型输出的结构化结果负责「判断」，来源列表负责「证据」，两者在 `src/lib/report.ts` 里合并编号，避免模型自由发挥写出不存在的链接。
+
+## 输出示例
+
+```markdown
+# 事实核查报告 · 「8 杯水」与咖啡因：三条流行健康说法的核查
+
+> **综合可信度 46/100 — 可信度低**
+> 三段说法中只有阿斯巴甜一段与官方文件一致……
+
+| 项目 | 内容 |
+| :--- | :--- |
+| 段落 / 可核实陈述 | 3 段 / 6 条 |
+| 判定分布 | 有据支持 2 · 部分支持 1 · 缺乏证据 1 · 与证据矛盾 2 |
+| 引用来源 | 6 条 · 6 个站点 |
+
+## 逐段核查
+
+### 1. 可信度低 · 34/100
+
+> 每天喝 8 杯水是医学界的共识，因为人体每天必须排出约 2 升水分。
+
+**判定** — 「8 杯水」没有权威机构背书……
+
+- **✕ 与证据矛盾** 「每天 8 杯水」是医学界共识 — 美国国家医学院、梅奥诊所均未给出该标准 [1]
+- **◐ 部分支持** 人体每天必须排出约 2 升水分 — 实际区间为 2–3 升 [2]
+```
+
+## 隐私与安全
+
+- **没有后端**。这个仓库不包含任何服务器、数据库或代理，部署后是一堆静态文件。
+- **Key 只存在本地**。写入 `localStorage`，随请求发往你选择的服务商，不经过第三方。清除浏览器数据即彻底删除。
+- **不做遥测**。没有埋点、没有统计脚本。
+- 公开部署时请知悉：任何拿到你浏览器的人都能读到本地保存的 Key，公共电脑上用完记得「清除 Key」。
+
+## 部署
+
+静态构建，任意托管均可：
+
+| 平台 | 做法 |
+| :--- | :--- |
+| GitHub Pages | 仓库已内置 `.github/workflows/deploy.yml`，推送到 `main` 后在 Settings → Pages 选择 GitHub Actions |
+| Vercel / Netlify | 直接导入仓库，构建命令 `npm run build`，输出目录 `dist` |
+| 任意对象存储 / Nginx | 上传 `dist/` 目录 |
+
+## 目录结构
+
+```
+src/
+├─ App.tsx                 首屏 / 运行态 / 报告态的状态机
+├─ components/
+│  ├─ Composer.tsx         输入区（文本 / 链接、深度、联网开关）
+│  ├─ ReportView.tsx       报告渲染（段落卡、来源、Markdown 预览）
+│  ├─ SettingsDialog.tsx   BYO-Key 设置与连接测试
+│  ├─ Processing.tsx       阶段进度
+│  └─ ScoreRing.tsx        可信度环
+├─ lib/
+│  ├─ providers.ts         六类服务商适配（含引用解析）
+│  ├─ prompt.ts            核查纪律与 JSON Schema
+│  ├─ pipeline.ts          编排：抓取 → 调用 → 解析 → 成文
+│  ├─ report.ts            归一化、来源去重与编号
+│  ├─ markdown.ts          Markdown 报告生成
+│  ├─ extract.ts           链接正文抽取
+│  └─ parse.ts             JSON 容错解析
+└─ styles/global.css       设计系统（色板、字体、组件样式）
+```
+
+## 已知限制
+
+- **抓取**：部分站点有反爬或需要登录，抓取会失败；此时请直接粘贴正文。公共代理不稳定，生产使用建议自建 Reader 服务。
+- **模型幻觉**：即使要求「不得编造 URL」，模型仍可能给出看似合理但错误的主张判断。报告是**辅助材料**，重要结论请回到原始来源复核。
+- **时效性**：未联网模式下，模型知识存在截止日期，近期事件容易判错。
+- **成本**：深度模式会显著增加检索与 token 消耗，建议先用「快速」试跑。
+
+## 参与贡献
+
+欢迎 Issue 与 PR。想加新的服务商，只需在 `src/lib/settings.ts` 里加一条 `ProviderPreset`，并在 `src/lib/providers.ts` 里实现一个 `runXxx` 适配器返回 `{ text, citations, searchUsed }`。
+
+## License
+
+[MIT](./LICENSE) © 2026 kkai726

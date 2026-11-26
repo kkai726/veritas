@@ -1,0 +1,33 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# build output
+dist
+dist-ssr
+*.local
+
+# editor / os
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env — 本项目不需要服务端密钥，Key 只存在浏览器里
+.env
+.env.*
+!.env.example
+
+# typescript
+*.tsbuildinfo
+
+# 本地截图草稿
+.shots/
