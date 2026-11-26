@@ -2050,3 +2050,242 @@ textarea {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* ============================================================
+   模型选择器（输入区右下角）
+   ============================================================ */
+.composer {
+  overflow: visible;
+}
+
+.composer-foot {
+  border-radius: 0 0 19px 19px;
+}
+
+.composer-tabs {
+  border-radius: 20px 20px 0 0;
+}
+
+.model-pick {
+  position: relative;
+  flex: none;
+}
+
+.model-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 9px 0 11px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--surface);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.model-trigger:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.model-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.model-trigger.is-empty {
+  border-style: dashed;
+  background: transparent;
+}
+
+.model-trigger-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.18;
+  min-width: 0;
+  max-width: 190px;
+}
+
+.model-trigger-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.model-trigger.is-empty .model-trigger-name {
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+.model-trigger-sub {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-trigger > svg {
+  flex: none;
+  color: var(--ink-3);
+  transition: transform 0.18s ease;
+}
+
+.model-trigger > svg.is-flip {
+  transform: rotate(180deg);
+}
+
+.model-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 272px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  z-index: 45;
+  max-height: 380px;
+  overflow-y: auto;
+  animation: pop 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.model-menu-label {
+  padding: 6px 8px 4px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.model-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 9px;
+  text-align: left;
+}
+
+.model-item:hover {
+  background: var(--surface-2);
+}
+
+.model-item.is-active {
+  background: var(--accent-soft);
+}
+
+.model-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.model-item-name {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.model-item-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-item-check {
+  color: var(--accent);
+  flex: none;
+}
+
+.model-item-add {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--accent);
+}
+
+.model-menu-sep {
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--line);
+}
+
+.model-item--ghost {
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+
+.model-item--ghost > svg {
+  color: var(--accent);
+  flex: none;
+}
+
+/* 开关不可用（服务商无内置联网） */
+.toggle.is-off {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 设置面板补充 */
+.provider-ready {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.dialog-foot-note {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 46%;
+}
+
+.text-link--danger {
+  color: #8b3a30;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.text-link--danger:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 780px) {
+  .composer-submit {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .model-trigger-text,
+  .model-trigger-sub {
+    max-width: 128px;
+  }
+
+  .model-menu {
+    right: auto;
+    left: 0;
+    width: min(272px, 82vw);
+  }
+}

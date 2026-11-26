@@ -1,5 +1,4 @@
 import { buildReport } from './report';
-import { DEFAULT_SETTINGS } from './settings';
 import type { Report } from './types';
 
 const TEXT = `每天喝 8 杯水是医学界的共识，因为人体每天必须排出约 2 升水分。
@@ -115,7 +114,8 @@ export function demoReport(): Report {
   return buildReport({
     json: JSON_PAYLOAD,
     raw: 'demo',
-    settings: { ...DEFAULT_SETTINGS, model: 'gpt-4.1' },
+    provider: 'openai',
+    model: 'gpt-4.1',
     providerName: 'OpenAI',
     citations: [],
     searchUsed: true,

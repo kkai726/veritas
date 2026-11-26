@@ -7,8 +7,9 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { TopBar } from './components/TopBar';
 import { STAGE_TEXT, factCheck, type Stage } from './lib/pipeline';
 import { demoReport } from './lib/demo';
-import { isConfigured, loadSettings, presetOf, saveSettings } from './lib/settings';
-import type { Report, Settings } from './lib/types';
+import { runtimeLabel } from './lib/transport';
+import { configOf, isConfigured, loadSettings, presetOf, saveSettings } from './lib/settings';
+import type { ProviderId, Report, Settings } from './lib/types';
 
 const EXAMPLES = [
   {
@@ -34,6 +35,7 @@ export default function App() {
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [focusProvider, setFocusProvider] = useState<ProviderId | null>(null);
   const [isDemo, setIsDemo] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -55,9 +57,18 @@ export default function App() {
     setSettings((prev) => ({ ...prev, ...patch }));
   };
 
+  const openSettings = (id?: ProviderId) => {
+    setFocusProvider(id ?? null);
+    setSettingsOpen(true);
+  };
+
+  const pickProvider = (id: ProviderId) => {
+    setSettings((prev) => ({ ...prev, activeId: id }));
+  };
+
   const run = useCallback(async () => {
     if (!isConfigured(settings)) {
-      setSettingsOpen(true);
+      openSettings(settings.activeId);
       return;
     }
     const ctrl = new AbortController();
@@ -104,12 +115,13 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const preset = presetOf(settings.provider);
+  const preset = presetOf(settings.activeId);
+  const config = configOf(settings);
   const configured = isConfigured(settings);
 
   return (
     <div className="app">
-      <TopBar settings={settings} onOpenSettings={() => setSettingsOpen(true)} />
+      <TopBar settings={settings} onOpenSettings={() => openSettings()} />
 
       <main className={`shell ${phase === 'idle' ? 'shell--idle' : ''}`}>
         {phase === 'done' && report ? (
@@ -126,7 +138,7 @@ export default function App() {
             search={settings.search && preset.supportsSearch}
             onCancel={cancel}
             providerLabel={preset.name}
-            model={settings.model}
+            model={config.model}
           />
         ) : (
           <>
@@ -166,7 +178,7 @@ export default function App() {
                   {error.hint && <span className="banner-hint">{error.hint}</span>}
                 </div>
                 <div className="banner-side">
-                  <button type="button" className="banner-action" onClick={() => setSettingsOpen(true)}>
+                  <button type="button" className="banner-action" onClick={() => openSettings(settings.activeId)}>
                     模型设置
                   </button>
                   <button type="button" className="banner-close" onClick={() => setError(null)} aria-label="关闭">
@@ -186,7 +198,9 @@ export default function App() {
               onRun={run}
               busy={false}
               configured={configured}
-              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenSettings={() => openSettings()}
+              onPickProvider={pickProvider}
+              onConfigureProvider={(id) => openSettings(id)}
             />
 
             <div className="examples">
@@ -225,7 +239,7 @@ export default function App() {
             {!configured && (
               <p className="setup-hint">
                 首次使用需要填写你自己的 API Key，
-                <button type="button" className="link-btn" onClick={() => setSettingsOpen(true)}>
+                <button type="button" className="link-btn" onClick={() => openSettings()}>
                   选择模型
                 </button>
                 。Key 只保存在这台设备的浏览器。
@@ -239,16 +253,20 @@ export default function App() {
         <span>
           Veritas · 核查结果为辅助判断，重要结论请回到原始来源复核
         </span>
-        <span className="foot-dim">{STAGE_TEXT.compose} · 由你的模型驱动</span>
+        <span className="foot-dim">
+          {runtimeLabel()} · {STAGE_TEXT.compose} · 由你的模型驱动
+        </span>
       </footer>
 
       {settingsOpen && (
         <SettingsDialog
           settings={settings}
+          initialProvider={focusProvider ?? undefined}
           onClose={() => setSettingsOpen(false)}
           onSave={(next) => {
             setSettings(next);
             setSettingsOpen(false);
+            setFocusProvider(null);
           }}
         />
       )}

@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8">
+<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}svg{display:block}</style>
+<div id="host"></div>
+<script>
+const q = new URLSearchParams(location.search);
+const size = Number(q.get('size') || 512);
+const shape = q.get('shape') || 'squircle';
+const mark = Number(q.get('mark') || 0.62);
+const bg = q.get('bg') || '#1c4739';
+const fg = q.get('fg') || '#f1f5ee';
+const c = size / 2;
+const r = size * mark / 2;
+const d = r * 0.72;
+const round = shape === 'circle';
+const rx = shape === 'square' ? 0 : size * 0.225;
+const back = shape === 'none' ? '' : round
+  ? `<circle cx="${c}" cy="${c}" r="${c}" fill="${bg}"/>`
+  : `<rect width="${size}" height="${size}" rx="${rx}" fill="${bg}"/>`;
+document.getElementById('host').innerHTML = `
+<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+  ${back}
+  <path d="M${c} ${c - r} L${c + r} ${c} L${c} ${c + r} L${c - r} ${c} Z" fill="none" stroke="${fg}" stroke-width="${size * 0.039}" stroke-linejoin="round"/>
+  <path d="M${c} ${c - d} L${c + d} ${c} L${c} ${c + d} L${c - d} ${c} Z" fill="${fg}"/>
+</svg>`;
+</script>

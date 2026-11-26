@@ -8,7 +8,10 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "electron": "npm run build && electron .",
+    "app:win": "npm run build && electron-builder --win",
+    "cap:sync": "npm run build && cap sync android"
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
@@ -21,7 +24,50 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.4.1",
+    "electron": "^45.5.0",
+    "electron-builder": "^26.18.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.kkai.veritas",
+    "productName": "Veritas",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "build/icon.png",
+      "package.json",
+      "!node_modules/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Veritas"
+    },
+    "asar": true
   }
 }

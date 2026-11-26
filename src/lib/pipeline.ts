@@ -3,7 +3,7 @@ import { ParseError, extractJson, looksLikeJson } from './parse';
 import { buildRepairPrompt, buildSystemPrompt, buildUserPrompt } from './prompt';
 import { runModel } from './providers';
 import { buildReport } from './report';
-import { presetOf } from './settings';
+import { configOf, presetOf } from './settings';
 import type { Report, Settings } from './types';
 import { countChars, looksLikeUrl, normalizeUrl } from './utils';
 
@@ -44,13 +44,15 @@ export async function factCheck({ settings, input, mode, onStage, signal }: Fact
     if (countChars(text) < 80) throw new Error('抓取到的正文过短，可能是登录页或反爬页面，请直接粘贴文本。');
   }
 
-  const preset = presetOf(settings.provider);
+  const provider = settings.activeId;
+  const preset = presetOf(provider);
+  const config = configOf(settings, provider);
   const searchEnabled = settings.search && preset.supportsSearch;
   const system = buildSystemPrompt(settings, searchEnabled);
   const user = buildUserPrompt({ text, url: sourceUrl, title: sourceTitle });
 
   onStage?.(searchEnabled ? 'research' : 'analyze');
-  const result = await runModel({ settings: { ...settings, search: searchEnabled }, system, user, signal });
+  const result = await runModel({ provider, config, system, user, signal });
 
   onStage?.('analyze');
   let json: any;
@@ -59,7 +61,8 @@ export async function factCheck({ settings, input, mode, onStage, signal }: Fact
   } catch (err) {
     if (!(err instanceof ParseError) && !looksLikeJson(result.text)) throw err;
     const repaired = await runModel({
-      settings: { ...settings, search: false },
+      provider,
+      config,
       system: '你是一个 JSON 修复器，只输出修正后的 JSON。',
       user: buildRepairPrompt(result.text),
       signal,
@@ -71,7 +74,8 @@ export async function factCheck({ settings, input, mode, onStage, signal }: Fact
   const report = buildReport({
     json,
     raw: result.text,
-    settings,
+    provider,
+    model: config.model,
     providerName: preset.name,
     citations: result.citations,
     searchUsed: result.searchUsed && searchEnabled,

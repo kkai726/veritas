@@ -1,6 +1,6 @@
 import type { RawCitation } from './providers';
 import { buildMarkdown } from './markdown';
-import type { Claim, ClaimVerdict, Paragraph, Report, Settings, Source } from './types';
+import type { Claim, ClaimVerdict, Paragraph, ProviderId, Report, Source } from './types';
 import { clamp, countChars, dedupeKey, hostOf, truncate } from './utils';
 
 const VERDICT_MAP: Record<string, ClaimVerdict> = {
@@ -57,7 +57,8 @@ function urlList(value: unknown): string[] {
 export interface BuildInput {
   json: any;
   raw: string;
-  settings: Settings;
+  provider: ProviderId;
+  model: string;
   providerName: string;
   citations: RawCitation[];
   searchUsed: boolean;
@@ -69,7 +70,7 @@ export interface BuildInput {
 }
 
 export function buildReport(input: BuildInput): Report {
-  const { json, settings, inputType, sourceUrl } = input;
+  const { json, inputType, sourceUrl } = input;
 
   const claimList = (raw: unknown): Claim[] => {
     if (!Array.isArray(raw)) return [];
@@ -233,9 +234,9 @@ export function buildReport(input: BuildInput): Report {
     sources,
     limitations,
     meta: {
-      provider: settings.provider,
+      provider: input.provider,
       providerName: input.providerName,
-      model: settings.model,
+      model: input.model,
       searchUsed: input.searchUsed,
       inputType,
       sourceUrl,

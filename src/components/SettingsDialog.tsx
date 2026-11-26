@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Check,
   ExternalLink,
@@ -8,26 +8,32 @@ import {
   Loader2,
   Lock,
   PlugZap,
+  Trash2,
   X,
 } from 'lucide-react';
-import { PROVIDERS, presetOf, resolveBaseUrl } from '../lib/settings';
+import { PROVIDERS, configOf, isConfigured, presetOf } from '../lib/settings';
 import { testConnection } from '../lib/providers';
+import { runtime, runtimeLabel } from '../lib/transport';
 import type { ProviderId, Settings } from '../lib/types';
 
 interface Props {
   settings: Settings;
+  initialProvider?: ProviderId;
   onSave: (settings: Settings) => void;
   onClose: () => void;
 }
 
-export function SettingsDialog({ settings, onSave, onClose }: Props) {
+export function SettingsDialog({ settings, initialProvider, onSave, onClose }: Props) {
   const [draft, setDraft] = useState<Settings>(settings);
+  const [selected, setSelected] = useState<ProviderId>(initialProvider || settings.activeId);
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
 
-  const preset = useMemo(() => presetOf(draft.provider), [draft.provider]);
+  const preset = useMemo(() => presetOf(selected), [selected]);
+  const config = useMemo(() => configOf(draft, selected), [draft, selected]);
+  const configured = isConfigured(draft, selected);
+  const onWeb = runtime() === 'web';
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -41,39 +47,61 @@ export function SettingsDialog({ settings, onSave, onClose }: Props) {
     };
   }, [onClose]);
 
-  const patch = (next: Partial<Settings>) => {
-    setDraft((prev) => ({ ...prev, ...next }));
+  const patch = (next: Partial<Settings>) => setDraft((prev) => ({ ...prev, ...next }));
+
+  const patchConfig = (next: Partial<typeof config>) => {
+    setDraft((prev) => ({
+      ...prev,
+      configs: {
+        ...prev.configs,
+        [selected]: { ...configOf(prev, selected), ...next },
+      },
+    }));
     setTestResult(null);
   };
 
   const pickProvider = (id: ProviderId) => {
-    const p = presetOf(id);
-    patch({
-      provider: id,
-      model: p.defaultModel || '',
-      baseUrl: id === 'custom' ? draft.baseUrl : '',
-      search: p.supportsSearch,
+    setSelected(id);
+    setShowKey(false);
+    setTestResult(null);
+  };
+
+  const clearKey = () => {
+    setDraft((prev) => {
+      const configs = { ...prev.configs };
+      delete configs[selected];
+      return { ...prev, configs };
     });
+    setTestResult(null);
   };
 
   const runTest = async () => {
     setTesting(true);
     setTestResult(null);
     try {
-      const message = await testConnection(draft);
+      const message = await testConnection(selected, config);
       setTestResult({ ok: true, message });
     } catch (err) {
-      setTestResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
+      const e = err as { message?: string; hint?: string };
+      setTestResult({ ok: false, message: [e.message, e.hint].filter(Boolean).join(' — ') });
     } finally {
       setTesting(false);
     }
   };
 
-  const canSave = Boolean(draft.apiKey.trim() && draft.model.trim() && resolveBaseUrl(draft));
+  const canSave = configured || Boolean(draft.configs[draft.activeId]?.apiKey);
+
+  const save = () => {
+    const next: Settings = {
+      ...draft,
+      activeId: isConfigured(draft, selected) ? selected : draft.activeId,
+    };
+    onSave(next);
+  };
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" ref={panelRef} role="dialog" aria-modal="true" aria-label="模型设置">
+      <div className="dialog" role="dialog" aria-modal="true" aria-label="模型设置">
         <div className="dialog-head">
           <div>
             <p className="eyebrow">Bring your own key</p>
@@ -88,23 +116,30 @@ export function SettingsDialog({ settings, onSave, onClose }: Props) {
           <div className="field">
             <label className="field-label">服务商</label>
             <div className="provider-grid">
-              {PROVIDERS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={`provider ${draft.provider === p.id ? 'is-active' : ''}`}
-                  onClick={() => pickProvider(p.id)}
-                >
-                  <span className="provider-top">
-                    <span className="provider-name">{p.name}</span>
-                    {draft.provider === p.id && <Check size={13} strokeWidth={2.4} />}
-                  </span>
-                  <span className="provider-blurb">{p.blurb}</span>
-                  <span className={`provider-tag ${p.supportsSearch ? 'is-live' : ''}`}>
-                    {p.supportsSearch ? '支持联网' : '无联网'}
-                  </span>
-                </button>
-              ))}
+              {PROVIDERS.map((p) => {
+                const ready = isConfigured(draft, p.id);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`provider ${selected === p.id ? 'is-active' : ''}`}
+                    onClick={() => pickProvider(p.id)}
+                  >
+                    <span className="provider-top">
+                      <span className="provider-name">{p.name}</span>
+                      {selected === p.id ? (
+                        <Check size={13} strokeWidth={2.4} />
+                      ) : ready ? (
+                        <span className="provider-ready" title="已配置" />
+                      ) : null}
+                    </span>
+                    <span className="provider-blurb">{p.blurb}</span>
+                    <span className={`provider-tag ${p.supportsSearch ? 'is-live' : ''}`}>
+                      {p.supportsSearch ? '支持联网' : '无联网'}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -116,12 +151,12 @@ export function SettingsDialog({ settings, onSave, onClose }: Props) {
               <input
                 id="model"
                 className="input"
-                list="veritas-models"
-                value={draft.model}
-                placeholder={preset.defaultModel || '例如 gpt-4.1'}
-                onChange={(e) => patch({ model: e.target.value })}
+                list={`models-${selected}`}
+                value={config.model}
+                placeholder={preset.defaultModel || '例如 deepseek-chat'}
+                onChange={(e) => patchConfig({ model: e.target.value })}
               />
-              <datalist id="veritas-models">
+              <datalist id={`models-${selected}`}>
                 {preset.models.map((m) => (
                   <option key={m} value={m} />
                 ))}
@@ -137,11 +172,11 @@ export function SettingsDialog({ settings, onSave, onClose }: Props) {
                   id="apikey"
                   className="input"
                   type={showKey ? 'text' : 'password'}
-                  value={draft.apiKey}
+                  value={config.apiKey}
                   placeholder={preset.keyHint}
                   autoComplete="off"
                   spellCheck={false}
-                  onChange={(e) => patch({ apiKey: e.target.value })}
+                  onChange={(e) => patchConfig({ apiKey: e.target.value })}
                 />
                 <button
                   type="button"
@@ -163,36 +198,36 @@ export function SettingsDialog({ settings, onSave, onClose }: Props) {
             <input
               id="baseurl"
               className="input"
-              value={draft.baseUrl}
+              value={config.baseUrl}
               placeholder={preset.baseUrl || 'https://your-gateway.com/v1'}
               spellCheck={false}
-              onChange={(e) => patch({ baseUrl: e.target.value })}
+              onChange={(e) => patchConfig({ baseUrl: e.target.value })}
             />
             <p className="field-hint">
-              留空即直连
-              {preset.baseUrl ? ` ${preset.baseUrl}` : '服务商地址'}
-              。若请求被浏览器拦下、或域名在你的网络里不可达，就填自建转发网关。自定义服务商需兼容 OpenAI 的 /chat/completions。
+              {preset.baseUrl
+                ? `留空即直连 ${preset.baseUrl}；走中转站或自建网关时把地址填这里。`
+                : '自定义服务商必须填，例如 https://your-gateway.com/v1，需兼容 /chat/completions。'}
             </p>
           </div>
 
-          {draft.provider === 'openai' && !draft.baseUrl.trim() && (
+          {selected === 'openai' && onWeb && (
             <div className="notice">
               <Info size={15} strokeWidth={1.9} />
               <div className="notice-body">
-                <strong>OpenAI 官方接口不接受浏览器直连</strong>
+                <strong>网页端无法直连 OpenAI</strong>
                 <span>
-                  它的响应里不带 CORS 允许头，页面只会拿到一个 Failed to fetch。两条稳妥路径：换上方的 OpenRouter，模型填
-                  openai/gpt-4.1；或按仓库里
+                  官方接口的响应不带 CORS 头，浏览器只能拿到 Failed to fetch。桌面端与安卓端在系统层发请求，不受这个限制；也可以在
+                  「接口地址」里填自建网关（仓库
                   <a href="https://github.com/kkai726/veritas/tree/main/worker" target="_blank" rel="noreferrer noopener">
-                    worker/ 模板
+                    worker/
                   </a>
-                  部署自己的转发网关，再填进「接口地址」。
+                  目录）。
                 </span>
               </div>
             </div>
           )}
 
-          <label className={`search-row ${preset.supportsSearch ? '' : 'is-disabled'}`}>
+          <div className={preset.supportsSearch ? 'search-row' : 'search-row is-disabled'}>
             <input
               type="checkbox"
               checked={draft.search && preset.supportsSearch}
@@ -201,12 +236,16 @@ export function SettingsDialog({ settings, onSave, onClose }: Props) {
             />
             <span>
               <strong>启用联网检索</strong>
-              <em>{preset.supportsSearch ? `通过${preset.searchLabel}获取实时来源` : '当前服务商没有联网能力，将仅依赖模型知识'}</em>
+              <em>
+                {preset.supportsSearch
+                  ? '通过 OpenAI 官方 web_search 获取实时来源，报告里的链接可直达原文'
+                  : `${preset.name} 没有内置联网，核查仅依据模型知识，判断会偏保守`}
+              </em>
             </span>
-          </label>
+          </div>
 
           <div className="dialog-actions">
-            <button type="button" className="ghost-btn" onClick={runTest} disabled={testing || !draft.apiKey || !draft.model}>
+            <button type="button" className="ghost-btn" onClick={runTest} disabled={testing || !config.apiKey || !config.model}>
               {testing ? <Loader2 size={14} className="spin" /> : <PlugZap size={14} />}
               测试连接
             </button>
@@ -216,6 +255,12 @@ export function SettingsDialog({ settings, onSave, onClose }: Props) {
                 <ExternalLink size={12} />
               </a>
             )}
+            {config.apiKey && (
+              <button type="button" className="text-link text-link--danger" onClick={clearKey}>
+                <Trash2 size={12} />
+                清除这家的 Key
+              </button>
+            )}
           </div>
 
           {testResult && (
@@ -224,24 +269,19 @@ export function SettingsDialog({ settings, onSave, onClose }: Props) {
 
           <p className="privacy">
             <Lock size={12} strokeWidth={2} />
-            Key 仅保存在本机浏览器的 localStorage，请求由浏览器发往服务商或你填写的网关，不经过我们的任何服务器。
+            Key 缓存在本机（{runtimeLabel()} · localStorage），按服务商分别保存；切换模型不会丢，也不会传到任何服务器。
           </p>
         </div>
 
         <div className="dialog-foot">
-          <button type="button" className="link-btn" onClick={() => patch({ apiKey: '' })}>
-            清除 Key
-          </button>
+          <span className="dialog-foot-note">
+            {isConfigured(draft, selected) ? `${preset.name} · ${config.model}` : '选一个服务商，填好 Key 即可'}
+          </span>
           <div className="dialog-foot-right">
             <button type="button" className="ghost-btn" onClick={onClose}>
               取消
             </button>
-            <button
-              type="button"
-              className="cta cta--sm"
-              disabled={!canSave}
-              onClick={() => onSave(draft)}
-            >
+            <button type="button" className="cta cta--sm" disabled={!canSave} onClick={save}>
               保存设置
             </button>
           </div>

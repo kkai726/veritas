@@ -1,5 +1,6 @@
 import { isOfficialEndpoint, presetOf, resolveBaseUrl } from './settings';
-import type { ProviderId, Settings } from './types';
+import { postJson, runtime } from './transport';
+import type { ProviderConfig, ProviderId } from './types';
 import { hostOf, isHeaderSafe, sanitizeSecret } from './utils';
 
 export interface RawCitation {
@@ -16,7 +17,8 @@ export interface RunResult {
 }
 
 export interface RunOptions {
-  settings: Settings;
+  provider: ProviderId;
+  config: ProviderConfig;
   system: string;
   user: string;
   signal?: AbortSignal;
@@ -24,7 +26,7 @@ export interface RunOptions {
 
 const REQUEST_TIMEOUT = 240_000;
 
-export type FailureCode = 'http' | 'network' | 'cors' | 'header' | 'timeout' | 'aborted';
+export type FailureCode = 'http' | 'network' | 'cors' | 'header' | 'timeout' | 'aborted' | 'config';
 
 export class ProviderError extends Error {
   status?: number;
@@ -45,6 +47,7 @@ function describeStatus(status: number, body: string): string {
   const map: Record<number, string> = {
     400: '请求被拒绝（模型或参数不被支持）',
     401: 'API Key 无效或已过期',
+    402: '账户余额不足',
     403: '没有访问权限（可能未开通该模型）',
     404: '接口或模型不存在，请检查接口地址与模型名',
     413: '内容超出模型的上下文长度',
@@ -59,35 +62,29 @@ function describeStatus(status: number, body: string): string {
   return detail ? `${base} — ${detail}` : base;
 }
 
-const GATEWAY_HINT =
-  '在「模型设置 → 接口地址」里填一个自建转发网关即可（仓库 worker/ 目录有现成模板，两分钟部署）。';
+const GATEWAY_HINT = '在「模型设置 → 接口地址」里填一个自建转发网关（仓库 worker/ 目录有现成模板）。';
 
-function networkFailure(
-  provider: ProviderId,
-  base: string,
-  elapsed: number,
-  raw: string,
-): ProviderError {
+function networkFailure(id: ProviderId, base: string, elapsed: number, raw: string): ProviderError {
   const host = hostOf(base) || base;
-  const official = isOfficialEndpoint(provider, base);
+  const onWeb = runtime() === 'web';
 
-  if (provider === 'openai' && official) {
+  if (id === 'openai' && isOfficialEndpoint(id, base) && onWeb) {
     return new ProviderError('OpenAI 官方接口不允许浏览器直连，请求被 CORS 拦下了。', {
       code: 'cors',
-      hint: `不是 Key 的问题：它的响应里没有 Access-Control-Allow-Origin。改用 OpenRouter（模型填 openai/gpt-4.1），或${GATEWAY_HINT}也可以换 Gemini / Perplexity / DeepSeek。`,
+      hint: `不是 Key 的问题：它的响应里没有 Access-Control-Allow-Origin。请用桌面端 / 安卓端打开，或${GATEWAY_HINT}`,
     });
   }
 
   if (elapsed < 1200) {
     return new ProviderError(`连不上 ${host}（${elapsed}ms 就被断开）`, {
       code: 'network',
-      hint: `这么快失败通常是域名解析不了或被网络策略直接拒绝：接口地址是否写错、是否需要在系统代理里放行这个域名、浏览器扩展（广告/隐私拦截）是否把它拦了。本地原始报错：${raw}`,
+      hint: `多半是域名解析失败或被网络策略拒绝：检查接口地址是否写错、是否要挂代理、防火墙是否拦截。原始报错：${raw}`,
     });
   }
 
   return new ProviderError(`连接 ${host} 失败`, {
     code: 'network',
-    hint: `请求在 ${elapsed}ms 时中断，多为网络被中断或证书问题。若在国内网络，${host} 可能不可达；可改用可达的服务商，或${GATEWAY_HINT}本地原始报错：${raw}`,
+    hint: `请求在 ${elapsed}ms 时中断，常见原因：网络不通、证书被拦截、网关挡了域名。原始报错：${raw}`,
   });
 }
 
@@ -98,60 +95,60 @@ interface RequestContext {
 
 async function requestJson(
   url: string,
-  init: RequestInit,
+  headers: Record<string, string>,
+  body: unknown,
   ctx: RequestContext,
   parentSignal?: AbortSignal,
 ): Promise<any> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT);
-  const onAbort = () => ctrl.abort();
-  parentSignal?.addEventListener('abort', onAbort);
   const started = performance.now();
 
+  let res;
   try {
-    const res = await fetch(url, { ...init, signal: ctrl.signal });
-    const body = await res.text();
-    if (!res.ok) {
-      throw new ProviderError(describeStatus(res.status, body), { status: res.status, code: 'http' });
-    }
-    try {
-      return JSON.parse(body);
-    } catch {
-      throw new ProviderError(`返回内容不是合法 JSON：${body.slice(0, 200)}`, { code: 'http' });
-    }
+    res = await postJson(
+      url,
+      { 'Content-Type': 'application/json', ...headers },
+      JSON.stringify(body),
+      { timeoutMs: REQUEST_TIMEOUT, signal: parentSignal },
+    );
   } catch (err) {
-    if (err instanceof ProviderError) throw err;
-
     const raw = err instanceof Error ? err.message : String(err);
 
     if (/non ISO-8859-1|Failed to read the 'headers'|Invalid value/i.test(raw)) {
       throw new ProviderError('请求头里有浏览器无法编码的字符', {
         code: 'header',
-        hint: 'API Key 或接口地址里混入了中文、全角符号或零宽字符。请清空后重新粘贴一次（只保留英文、数字和 - _）。',
+        hint: 'API Key 或接口地址里混进了中文、全角符号或零宽字符。清空后重新粘贴一次（只保留英文、数字和 - _ .）。',
       });
     }
 
     if (err instanceof DOMException && err.name === 'AbortError') {
-      if (parentSignal?.aborted) {
-        throw new ProviderError('已取消', { code: 'aborted' });
-      }
+      if (parentSignal?.aborted) throw new ProviderError('已取消', { code: 'aborted' });
       throw new ProviderError('请求超时', {
         code: 'timeout',
-        hint: '模型 4 分钟没有返回。可以换更快的模型、把深度调成「快速」，或者关掉联网检索再试。',
+        hint: '模型 4 分钟没有返回。换更快的模型、把深度调成「快速」，或关掉联网检索再试。',
       });
     }
 
     if (location.protocol === 'https:' && url.startsWith('http://')) {
-      throw new ProviderError('接口地址是 http，被浏览器的混合内容策略拦下了', {
+      throw new ProviderError('接口地址是 http，被混合内容策略拦下了', {
         code: 'cors',
-        hint: '页面本身是 https，无法请求 http 接口。请把接口地址换成 https。',
+        hint: '页面本身是 https，不能请求 http 接口。把接口地址换成 https。',
       });
     }
 
     throw networkFailure(ctx.provider, ctx.base, Math.round(performance.now() - started), raw);
-  } finally {
-    clearTimeout(timer);
-    parentSignal?.removeEventListener('abort', onAbort);
+  }
+
+  if (res.status < 200 || res.status >= 300) {
+    throw new ProviderError(describeStatus(res.status, res.text), {
+      status: res.status,
+      code: 'http',
+    });
+  }
+
+  try {
+    return JSON.parse(res.text);
+  } catch {
+    throw new ProviderError(`返回内容不是合法 JSON：${res.text.slice(0, 200)}`, { code: 'http' });
   }
 }
 
@@ -178,17 +175,15 @@ function chatText(content: unknown): string {
   return '';
 }
 
-/* ------------------------------------------------------------------ OpenAI */
-async function runOpenAI(opts: RunOptions): Promise<RunResult> {
-  const { settings, system, user, signal } = opts;
-  const base = resolveBaseUrl(settings);
+/* ------------------------------------------- OpenAI：Responses + web_search */
+async function runOpenAIResponses(opts: RunOptions, notes: string[]): Promise<RunResult | null> {
+  const { config, system, user, signal } = opts;
+  const base = resolveBaseUrl('openai', config);
   const ctx: RequestContext = { provider: 'openai', base };
-  const notes: string[] = [];
-  const useSearch = settings.search;
 
-  const callResponses = async (withTools: boolean) => {
+  const call = (withTools: boolean) => {
     const body: Record<string, unknown> = {
-      model: settings.model,
+      model: config.model,
       instructions: system,
       input: user,
       store: false,
@@ -198,33 +193,20 @@ async function runOpenAI(opts: RunOptions): Promise<RunResult> {
       body.tools = [{ type: 'web_search' }];
       body.tool_choice = 'auto';
     }
-    return requestJson(
-      `${base}/responses`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${settings.apiKey}`,
-        },
-        body: JSON.stringify(body),
-      },
-      ctx,
-      signal,
-    );
+    return requestJson(`${base}/responses`, { Authorization: `Bearer ${config.apiKey}` }, body, ctx, signal);
   };
 
   let data: any;
   try {
-    data = await callResponses(useSearch);
+    data = await call(true);
   } catch (err) {
     const e = err as ProviderError;
     if (e.status === 400 || e.status === 404) {
-      if (useSearch) {
+      try {
+        data = await call(false);
         notes.push('当前模型不支持 web_search 工具，已自动降级为无联网模式。');
-        data = await callResponses(false);
-      } else {
-        notes.push('未找到 Responses 接口，已回退到 Chat Completions。');
-        return runChatCompatible({ ...opts, system }, 'openai', notes);
+      } catch {
+        return null;
       }
     } else {
       throw e;
@@ -242,124 +224,48 @@ async function runOpenAI(opts: RunOptions): Promise<RunResult> {
       if (part?.type !== 'output_text' && part?.type !== 'text') continue;
       text += part.text ?? '';
       for (const ann of part.annotations ?? []) {
-        if (ann?.type === 'url_citation' && ann.url) {
-          citations.push(citeFromLink(ann.url, ann.title));
-        }
+        if (ann?.type === 'url_citation' && ann.url) citations.push(citeFromLink(ann.url, ann.title));
       }
     }
   }
 
-  if (!text.trim()) throw new ProviderError('模型返回了空结果，请重试或更换模型。', { code: 'http' });
+  if (!text.trim()) return null;
   return { text, citations, searchUsed: searched || citations.length > 0, notes };
 }
 
-/* ------------------------------------------------------------------ Gemini */
-async function runGemini(opts: RunOptions): Promise<RunResult> {
-  const { settings, system, user, signal } = opts;
-  const base = resolveBaseUrl(settings);
-  const search = settings.search;
-  const payload: Record<string, unknown> = {
-    systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: 'user', parts: [{ text: user }] }],
-    generationConfig: { temperature: 0.3, maxOutputTokens: 8192 },
-  };
-  if (search) payload.tools = [{ google_search: {} }];
-
-  const data = await requestJson(
-    `${base}/models/${encodeURIComponent(settings.model)}:generateContent?key=${encodeURIComponent(settings.apiKey)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    },
-    { provider: 'gemini', base },
-    signal,
-  );
-
-  const cand = data?.candidates?.[0];
-  const text = (cand?.content?.parts ?? [])
-    .filter((p: any) => p && typeof p.text === 'string' && !p.thought)
-    .map((p: any) => p.text)
-    .join('');
-
-  if (!text.trim()) {
-    const block = data?.promptFeedback?.blockReason;
-    throw new ProviderError(
-      block ? `内容被安全策略拦截：${block}` : '模型返回了空结果，请重试或更换模型。',
-      { code: 'http' },
-    );
-  }
-
-  const citations: RawCitation[] = [];
-  for (const chunk of cand?.groundingMetadata?.groundingChunks ?? []) {
-    const web = chunk?.web;
-    if (web?.uri) citations.push(citeFromLink(web.uri, web.title));
-  }
-
-  return {
-    text,
-    citations,
-    searchUsed: citations.length > 0 || (cand?.groundingMetadata?.webSearchQueries?.length ?? 0) > 0,
-    notes: [],
-  };
-}
-
-/* -------------------------------------------------- OpenAI 兼容 /chat/completions */
-async function runChatCompatible(
-  opts: RunOptions,
-  flavor: 'openai' | 'openrouter' | 'perplexity' | 'deepseek' | 'custom',
-  notes: string[] = [],
-): Promise<RunResult> {
-  const { settings, system, user, signal } = opts;
-  const base = resolveBaseUrl(settings);
-  const ctx: RequestContext = { provider: flavor === 'custom' ? 'custom' : flavor, base };
+/* ------------------------------------------- OpenAI 兼容 /chat/completions */
+async function runChat(opts: RunOptions, notes: string[]): Promise<RunResult> {
+  const { provider, config, system, user, signal } = opts;
+  const base = resolveBaseUrl(provider, config);
+  const ctx: RequestContext = { provider, base };
   const endpoint = `${base}/chat/completions`;
-  const search = settings.search && flavor !== 'deepseek';
-  const model =
-    flavor === 'openrouter' && search && !settings.model.endsWith(':online')
-      ? `${settings.model}:online`
-      : settings.model;
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${settings.apiKey}`,
-  };
-  if (flavor === 'openrouter') {
-    headers['HTTP-Referer'] = location.origin;
-    headers['X-Title'] = 'Veritas';
-  }
+  const headers: Record<string, string> = { Authorization: `Bearer ${config.apiKey}` };
 
   const body: Record<string, unknown> = {
-    model,
+    model: config.model,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
     temperature: 0.2,
     max_tokens: 8000,
+    stream: false,
   };
-  if (flavor === 'perplexity') body.return_citations = true;
-  if (flavor === 'deepseek' || flavor === 'custom') body.response_format = { type: 'json_object' };
 
   let data: any;
   try {
     data = await requestJson(
       endpoint,
-      { method: 'POST', headers, body: JSON.stringify(body) },
+      headers,
+      { ...body, response_format: { type: 'json_object' } },
       ctx,
       signal,
     );
   } catch (err) {
     const e = err as ProviderError;
-    if (e.status === 400 && body.response_format) {
-      delete body.response_format;
-      notes.push('网关不支持 JSON 模式，已改用常规输出。');
-      data = await requestJson(
-        endpoint,
-        { method: 'POST', headers, body: JSON.stringify(body) },
-        ctx,
-        signal,
-      );
+    if (e.status === 400) {
+      notes.push('该网关不支持 JSON 模式，已改用常规输出。');
+      data = await requestJson(endpoint, headers, body, ctx, signal);
     } else {
       throw e;
     }
@@ -387,79 +293,63 @@ async function runChatCompatible(
 
 /* ------------------------------------------------------------------ Runner */
 
-/** 清洗用户输入：去掉零宽字符与换行，避免请求头非法导致「Failed to fetch」 */
-function normalizeSettings(settings: Settings): Settings {
-  const apiKey = sanitizeSecret(settings.apiKey);
-  const baseUrl = (settings.baseUrl || '').trim();
+function normalizeConfig(id: ProviderId, config: ProviderConfig): ProviderConfig {
+  const apiKey = sanitizeSecret(config.apiKey || '');
+  const baseUrl = (config.baseUrl || '').trim();
+  const model = (config.model || '').trim();
 
   if (apiKey && !isHeaderSafe(apiKey)) {
     throw new ProviderError('API Key 里含有中文或全角字符', {
       code: 'header',
-      hint: '浏览器无法把非 ASCII 字符放进请求头。请重新复制 Key，粘贴时注意不要连带中文标点。',
+      hint: '原生通道与浏览器都无法把非 ASCII 字符放进请求头。重新复制 Key，注意别带上中文标点。',
     });
   }
   if (baseUrl && !/^https?:\/\//i.test(baseUrl)) {
     throw new ProviderError('接口地址必须以 https:// 开头', {
-      code: 'header',
-      hint: `当前填写的是「${baseUrl}」。改成完整地址，例如 https://your-gateway.workers.dev/openai/v1。`,
+      code: 'config',
+      hint: `当前填写的是「${baseUrl}」。填完整地址，例如 https://api.deepseek.com/v1。`,
+    });
+  }
+  if (!resolveBaseUrl(id, { ...config, apiKey, baseUrl, model })) {
+    throw new ProviderError('还没填接口地址', {
+      code: 'config',
+      hint: '自定义服务商需要填一个 OpenAI 兼容的 Base URL，例如 https://your-gateway.com/v1。',
     });
   }
 
-  return { ...settings, apiKey, baseUrl };
+  return { apiKey, baseUrl, model };
 }
 
 export async function runModel(opts: RunOptions): Promise<RunResult> {
-  const settings = normalizeSettings(opts.settings);
-  const next: RunOptions = { ...opts, settings };
-  switch (settings.provider) {
-    case 'openai':
-      return runOpenAI(next);
-    case 'gemini':
-      return runGemini(next);
-    case 'perplexity':
-      return runChatCompatible(next, 'perplexity');
-    case 'openrouter':
-      return runChatCompatible(next, 'openrouter');
-    case 'deepseek':
-      return runChatCompatible(next, 'deepseek');
-    case 'custom':
-      return runChatCompatible(next, 'custom');
-    default:
-      throw new ProviderError(`未知的服务商：${settings.provider}`, { code: 'http' });
+  const config = normalizeConfig(opts.provider, opts.config);
+  const next: RunOptions = { ...opts, config };
+  const notes: string[] = [];
+
+  if (opts.provider === 'openai') {
+    const result = await runOpenAIResponses(next, notes);
+    if (result) return result;
+    notes.push('Responses 接口不可用，已回退到 Chat Completions。');
   }
+  return runChat(next, notes);
 }
 
-export async function testConnection(settings: Settings): Promise<string> {
-  const clean = normalizeSettings(settings);
-  const base = resolveBaseUrl(clean);
-  const preset = presetOf(clean.provider);
-  if (!base) throw new ProviderError('请先填写接口地址', { code: 'header' });
+export async function testConnection(id: ProviderId, config: ProviderConfig): Promise<string> {
+  const clean = normalizeConfig(id, config);
+  const base = resolveBaseUrl(id, clean);
+  const preset = presetOf(id);
 
-  if (clean.provider === 'gemini') {
-    await requestJson(
-      `${base}/models/${encodeURIComponent(clean.model)}:generateContent?key=${encodeURIComponent(clean.apiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'ping' }] }] }),
-      },
-      { provider: 'gemini', base },
-    );
-    return `${preset.name} · ${clean.model} 连接正常`;
-  }
-
-  await requestJson(
+  const data = await requestJson(
     `${base}/chat/completions`,
+    { Authorization: `Bearer ${clean.apiKey}` },
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${clean.apiKey}` },
-      body: JSON.stringify({
-        model: clean.model,
-        messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 1,
-      }),
+      model: clean.model,
+      messages: [{ role: 'user', content: 'ping' }],
+      max_tokens: 1,
+      stream: false,
     },
-    { provider: clean.provider, base },
+    { provider: id, base },
   );
+
+  if (!data?.choices) throw new ProviderError('接口返回格式不像 OpenAI 兼容协议', { code: 'http' });
   return `${preset.name} · ${clean.model} 连接正常`;
 }

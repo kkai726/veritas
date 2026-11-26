@@ -1,16 +1,17 @@
-export type ProviderId =
-  | 'openai'
-  | 'gemini'
-  | 'perplexity'
-  | 'openrouter'
-  | 'deepseek'
-  | 'custom';
+export type ProviderId = 'deepseek' | 'mimo' | 'glm' | 'kimi' | 'openai' | 'custom';
 
-export interface Settings {
-  provider: ProviderId;
+/** 单个服务商的连接配置（Key 按服务商分别缓存） */
+export interface ProviderConfig {
   model: string;
   apiKey: string;
   baseUrl: string;
+}
+
+export interface Settings {
+  /** 已配置过的服务商；未出现即未配置 */
+  configs: Partial<Record<ProviderId, ProviderConfig>>;
+  /** 当前选中的服务商 */
+  activeId: ProviderId;
   search: boolean;
   depth: 'quick' | 'standard' | 'deep';
 }

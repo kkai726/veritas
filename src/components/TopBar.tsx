@@ -1,5 +1,5 @@
 import { Github, Settings2 } from 'lucide-react';
-import { presetOf } from '../lib/settings';
+import { configOf, isConfigured, presetOf } from '../lib/settings';
 import type { Settings } from '../lib/types';
 
 interface Props {
@@ -8,7 +8,9 @@ interface Props {
 }
 
 export function TopBar({ settings, onOpenSettings }: Props) {
-  const preset = presetOf(settings.provider);
+  const preset = presetOf(settings.activeId);
+  const config = configOf(settings);
+  const ready = isConfigured(settings);
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -27,9 +29,9 @@ export function TopBar({ settings, onOpenSettings }: Props) {
 
         <div className="topbar-right">
           <button className="model-chip" onClick={onOpenSettings} type="button">
-            <span className={`dot ${settings.apiKey ? 'dot--on' : 'dot--off'}`} />
+            <span className={`dot ${ready ? 'dot--on' : 'dot--off'}`} />
             <span className="model-chip-name">{preset.name}</span>
-            <span className="model-chip-model">{settings.model || '未选择模型'}</span>
+            <span className="model-chip-model">{ready ? config.model : '未配置模型'}</span>
             <Settings2 size={13} strokeWidth={1.8} />
           </button>
           <a

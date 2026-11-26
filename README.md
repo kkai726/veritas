@@ -45,6 +45,38 @@ Veritas 不做一句话判决，它做的事是：
 - **深度可调**：快速 / 标准 / 深度三档，控制拆段数量与检索强度，兼顾成本。
 - **零后端**：静态站点即可运行，`npm run build` 产出纯静态文件，扔到任何地方都能用。
 
+## 三种运行形态
+
+同一个前端代码库，打包成三种东西，共用一个界面与一套 Key 缓存：
+
+| 形态 | 产物 | 网络通道 | 能不能直连 OpenAI |
+| :--- | :--- | :--- | :--- |
+| 网页 | `dist/` 静态文件 | 浏览器 `fetch` | 不能（CORS） |
+| Windows 桌面 | 安装包 `.exe` / 免安装 `.exe` | Electron 主进程 `net` | 能 |
+| 安卓 | `.apk` | Capacitor 原生 HTTP | 能 |
+
+模型的 Key 按服务商分别缓存在本机 `localStorage`，切换模型不丢，卸载才清除。
+
+### Windows 桌面端
+
+```bash
+npm install
+npm run app:win        # 产出 release/ 下的安装包与免安装版
+```
+
+开发时直接 `npm run electron`（先构建再起窗口）。
+
+### 安卓端
+
+```bash
+npm install
+npx cap sync android
+cd android && ./gradlew assembleDebug
+# 产物：android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+正式签名版把 `assembleDebug` 换成 `assembleRelease`，并在 `android/app/build.gradle` 里配好 `signingConfigs`。
+
 ## 快速开始
 
 ```bash
@@ -66,16 +98,20 @@ npm run preview
 
 ## 支持的模型
 
-| 服务商 | 默认模型 | 联网方式 | 说明 |
-| :--- | :--- | :--- | :--- |
-| OpenAI | `gpt-4.1` | Responses API `web_search` 工具 | 来源取自官方 `url_citation` 标注，最稳 |
-| Google Gemini | `gemini-2.5-flash` | Google Search grounding | 来源取自 `groundingMetadata` |
-| Perplexity | `sonar-pro` | Sonar 实时检索 | 返回 `citations` / `search_results` |
-| OpenRouter | `openai/gpt-4.1` | 模型名加 `:online` | 一个 Key 打通多家模型 |
-| DeepSeek | `deepseek-chat` | 无 | 仅做知识层面的一致性核对 |
-| 自定义 | — | 取决于网关 | 兼容 `/chat/completions` 的自建网关 |
+界面上直接可选的六家，Key 按服务商分别缓存，换模型不用重填：
 
-> 所有请求由浏览器直接发往服务商。若某家服务商不允许浏览器跨域调用，可改用 OpenRouter，或把请求指向你自己的网关（「自定义」服务商）。
+| 服务商 | 默认模型 | 浏览器直连 | 说明 |
+| :--- | :--- | :--- | :--- |
+| DeepSeek | `deepseek-chat` | 可用 | 中文与推理稳，价格低 |
+| MiMo | `mimo-v2.6-pro` | 可用 | 小米开放平台，OpenAI 兼容 |
+| GLM | `glm-4.6` | 可用 | 智谱开放平台，`/api/paas/v4` |
+| Kimi | `kimi-k3-1-pro` | 可用 | 月之暗面，长文本 |
+| OpenAI | `gpt-4.1` | **不可用（CORS）** | 唯一带官方 `web_search`，需桌面端/安卓端 |
+| 自定义 | — | 取决于网关 | 中转站、vLLM、Ollama、企业网关，填 Base URL 即可 |
+
+模型名在设置里可以直接改，不局限于下拉建议值。其余服务商（Gemini、Perplexity、OpenRouter 等）走「自定义」填地址与模型名。
+
+只有 OpenAI 会真正联网检索（`web_search` 工具）；其余模型没有内置检索，核查只依据模型自身知识，报告里的 `limitations` 会标出来。
 
 ## 为什么 OpenAI 会报 `Failed to fetch`
 
