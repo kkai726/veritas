@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld('veritasNative', {
   version: process.versions.electron,
   httpPost: (req) => ipcRenderer.invoke('veritas:http', { ...req, method: 'POST' }),
   httpGet: (req) => ipcRenderer.invoke('veritas:http', { ...req, method: 'GET' }),
+  netCheck: (req) => ipcRenderer.invoke('veritas:net-check', req),
 });

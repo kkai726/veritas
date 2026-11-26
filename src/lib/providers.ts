@@ -1,7 +1,8 @@
 import { isOfficialEndpoint, presetOf, resolveBaseUrl } from './settings';
-import { postJson, runtime } from './transport';
+import { describeNetCheck, netCheck, postJson, runtime } from './transport';
+import type { TransportError } from './transport';
 import type { ProviderConfig, ProviderId } from './types';
-import { hostOf, isHeaderSafe, sanitizeSecret } from './utils';
+import { hostOf, isHeaderSafe, sanitizeSecret, sleep } from './utils';
 
 export interface RawCitation {
   title: string;
@@ -30,7 +31,7 @@ export interface RunOptions {
 
 const REQUEST_TIMEOUT = 240_000;
 
-export type FailureCode = 'http' | 'network' | 'cors' | 'header' | 'timeout' | 'aborted' | 'config';
+export type FailureCode = 'http' | 'network' | 'dns' | 'cors' | 'header' | 'timeout' | 'aborted' | 'config';
 
 export class ProviderError extends Error {
   status?: number;
@@ -68,7 +69,13 @@ function describeStatus(status: number, body: string): string {
 
 const GATEWAY_HINT = '在「模型设置 → 接口地址」里填一个自建转发网关（仓库 worker/ 目录有现成模板）。';
 
-function networkFailure(id: ProviderId, base: string, elapsed: number, raw: string): ProviderError {
+function networkFailure(
+  id: ProviderId,
+  base: string,
+  elapsed: number,
+  raw: string,
+  code?: string,
+): ProviderError {
   const host = hostOf(base) || base;
   const onWeb = runtime() === 'web';
 
@@ -76,6 +83,24 @@ function networkFailure(id: ProviderId, base: string, elapsed: number, raw: stri
     return new ProviderError('OpenAI 官方接口不允许浏览器直连，请求被 CORS 拦下了。', {
       code: 'cors',
       hint: `不是 Key 的问题：它的响应里没有 Access-Control-Allow-Origin。请用桌面端 / 安卓端打开，或${GATEWAY_HINT}`,
+    });
+  }
+
+  if (code === 'dns-notfound' || code === 'dns-temp' || /ENOTFOUND|ENOENT|getaddrinfo|EAI_AGAIN|ERR_NAME_NOT_RESOLVED/i.test(raw)) {
+    return new ProviderError(`连不上 ${host}：本机解析不到这个域名（${elapsed}ms）`, {
+      code: 'dns',
+      hint:
+        `系统 DNS 对 ${host} 返回了「不存在」。常见原因：当前网络（校园网 / 公司网 / 代理节点的分流规则）拦截或劫持了 DNS、` +
+        '代理软件只接管了浏览器没接管桌面应用、hosts 里有错误记录。可以依次试：① 关掉代理再测一次；' +
+        '② 把系统 DNS 改成 223.5.5.5 或 119.29.29.29；③ 在「模型设置」点「测试连接」，那里会显示 DNS、系统代理与两条网络通道的实测结果。' +
+        `原始报错：${raw}`,
+    });
+  }
+
+  if (code === 'tls') {
+    return new ProviderError(`与 ${host} 的 TLS 握手失败（${elapsed}ms）`, {
+      code: 'network',
+      hint: `证书或 TLS 被中间设备拦截。公司网络 / 杀毒软件做 HTTPS 扫描时常见；换一个网络，或把该域名加入白名单。原始报错：${raw}`,
     });
   }
 
@@ -97,6 +122,8 @@ interface RequestContext {
   base: string;
 }
 
+const TRANSIENT = /getaddrinfo|ENOTFOUND|ENOENT|EAI_AGAIN|ECONNRESET|socket hang up|net::ERR/i;
+
 async function requestJson(
   url: string,
   headers: Record<string, string>,
@@ -105,41 +132,54 @@ async function requestJson(
   parentSignal?: AbortSignal,
 ): Promise<any> {
   const started = performance.now();
+  const send = () =>
+    postJson(url, { 'Content-Type': 'application/json', ...headers }, JSON.stringify(body), {
+      timeoutMs: REQUEST_TIMEOUT,
+      signal: parentSignal,
+    });
 
-  let res;
-  try {
-    res = await postJson(
-      url,
-      { 'Content-Type': 'application/json', ...headers },
-      JSON.stringify(body),
-      { timeoutMs: REQUEST_TIMEOUT, signal: parentSignal },
-    );
-  } catch (err) {
+  const translate = (err: unknown): ProviderError => {
     const raw = err instanceof Error ? err.message : String(err);
+    const code = (err as TransportError | undefined)?.code;
 
     if (/non ISO-8859-1|Failed to read the 'headers'|Invalid value/i.test(raw)) {
-      throw new ProviderError('请求头里有浏览器无法编码的字符', {
+      return new ProviderError('请求头里有浏览器无法编码的字符', {
         code: 'header',
         hint: 'API Key 或接口地址里混进了中文、全角符号或零宽字符。清空后重新粘贴一次（只保留英文、数字和 - _ .）。',
       });
     }
 
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      if (parentSignal?.aborted) throw new ProviderError('已取消', { code: 'aborted' });
-      throw new ProviderError('请求超时', {
+    if ((err instanceof DOMException && err.name === 'AbortError') || /AbortError/i.test(raw)) {
+      if (parentSignal?.aborted) return new ProviderError('已取消', { code: 'aborted' });
+      return new ProviderError('请求超时', {
         code: 'timeout',
         hint: '模型 4 分钟没有返回。换更快的模型、把深度调成「快速」，或减少段落数量再试。',
       });
     }
 
     if (location.protocol === 'https:' && url.startsWith('http://')) {
-      throw new ProviderError('接口地址是 http，被混合内容策略拦下了', {
+      return new ProviderError('接口地址是 http，被混合内容策略拦下了', {
         code: 'cors',
         hint: '页面本身是 https，不能请求 http 接口。把接口地址换成 https。',
       });
     }
 
-    throw networkFailure(ctx.provider, ctx.base, Math.round(performance.now() - started), raw);
+    return networkFailure(ctx.provider, ctx.base, Math.round(performance.now() - started), raw, code);
+  };
+
+  let res;
+  try {
+    res = await send();
+  } catch (err) {
+    // DNS 抖动、连接被重置这类失败重试一次通常就好了；证书 / 400 类错误不重试
+    const raw = err instanceof Error ? err.message : String(err);
+    if (!TRANSIENT.test(raw) || parentSignal?.aborted) throw translate(err);
+    await sleep(600);
+    try {
+      res = await send();
+    } catch (second) {
+      throw translate(second);
+    }
   }
 
   if (res.status < 200 || res.status >= 300) {
@@ -411,6 +451,13 @@ export async function testConnection(id: ProviderId, config: ProviderConfig): Pr
         code: 'config',
         hint: `当前模型「${clean.model}」在该地址上没有找到。检查模型名，或把接口地址改成 ${preset.baseUrl || '你的网关地址'}。`,
       });
+    }
+    // 连不上时顺手跑一遍网络诊断，把 DNS / 代理 / 通道的实际结果写进提示
+    if (e.code === 'dns' || e.code === 'network' || e.code === 'timeout') {
+      const diag = describeNetCheck(await netCheck(base));
+      if (diag) {
+        throw new ProviderError(e.message, { code: e.code, hint: `${e.hint ?? ''}｜实测：${diag}` });
+      }
     }
     throw e;
   }

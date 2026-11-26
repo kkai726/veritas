@@ -80,12 +80,19 @@ export interface BuildInput {
   timings?: { extractMs: number; researchMs: number; modelMs: number };
 }
 
-/** 主张与证据的兜底匹配：模型没挂来源时，用词面重叠补上最相关的一两条 */
+/**
+ * 主张与证据的兜底匹配：模型没挂来源时，用词面重叠补上最相关的一两条。
+ *
+ * 分数 = 主张词元被证据覆盖的比例（数字 / 英文词元权重更高），
+ * 不再除以证据长度——否则长一点的摘录会被系统性压低。
+ */
 function matchEvidence(claimText: string, evidence: EvidenceRef[], limit = 2): string[] {
   if (!evidence.length) return [];
   const bag = (text: string) => {
     const set = new Set<string>();
-    (text.match(/[A-Za-z0-9][A-Za-z0-9.+%-]{2,}/g) ?? []).forEach((w) => set.add(w.toLowerCase()));
+    (text.match(/[A-Za-z][A-Za-z0-9.+%-]*|[0-9]+(?:\.[0-9]+)?%?/g) ?? []).forEach((w) =>
+      set.add(w.toLowerCase()),
+    );
     for (const chunk of text.match(/[\u4e00-\u9fff]{2,}/g) ?? []) {
       for (let i = 0; i < chunk.length - 1; i += 1) set.add(chunk.slice(i, i + 2));
     }
@@ -98,11 +105,16 @@ function matchEvidence(claimText: string, evidence: EvidenceRef[], limit = 2): s
   const scored = evidence
     .map((e) => {
       const own = bag(`${e.title} ${e.snippet}`);
-      let hits = 0;
-      for (const t of want) if (own.has(t)) hits += 1;
-      return { url: e.url, score: hits / Math.sqrt(own.size || 1) };
+      let hit = 0;
+      let total = 0;
+      for (const t of want) {
+        const weight = /^[0-9]/.test(t) || /^[a-z]/.test(t) ? 2.5 : 1;
+        total += weight;
+        if (own.has(t)) hit += weight;
+      }
+      return { url: e.url, score: hit / Math.max(8, total) };
     })
-    .filter((s) => s.score > 0.12)
+    .filter((s) => s.score >= 0.28)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
@@ -199,10 +211,15 @@ export function buildReport(input: BuildInput): Report {
   for (const c of input.citations) add(c.url, c.title, c.publisher);
   for (const e of input.evidence ?? []) add(e.url, e.title, e.publisher);
 
+  // 本地检索有结果时，只认证据池里出现过的 URL：模型偶尔会顺手编一个
+  // 看起来很像的链接，这里直接丢掉，改由下面的词面匹配补来源
+  const evidenceKeys = new Set((input.evidence ?? []).map((e) => dedupeKey(e.url)));
+
   for (const p of paragraphs) {
     for (const claim of p.claims) {
       const withRaw = claim as Claim & { rawSources?: string[] };
       let mapped = (withRaw.rawSources ?? [])
+        .filter((u) => !evidenceKeys.size || evidenceKeys.has(dedupeKey(u)))
         .map((u) => add(u))
         .filter((id): id is number => id !== null);
       if (!mapped.length && input.evidence?.length) {

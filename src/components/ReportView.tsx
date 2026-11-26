@@ -70,6 +70,7 @@ function CiteLinks({ ids, sources }: { ids: number[]; sources: Source[] }) {
 
 function ClaimRow({ claim, sources }: { claim: Claim; sources: Source[] }) {
   const Icon = VERDICT_ICON[claim.verdict];
+  const noSource = claim.sourceIds.length === 0;
   return (
     <li className={`claim claim--${VERDICT_TONE[claim.verdict]}`}>
       <Icon className="claim-icon" size={15} strokeWidth={1.9} />
@@ -79,6 +80,9 @@ function ClaimRow({ claim, sources }: { claim: Claim; sources: Source[] }) {
           <CiteLinks ids={claim.sourceIds} sources={sources} />
         </p>
         {claim.note && <p className="claim-note">{claim.note}</p>}
+        {noSource && (claim.verdict === 'unsupported' || claim.verdict === 'unknown') && (
+          <p className="claim-hint">本次检索没有匹配到相关来源——表示没查到，不等于事实不成立。</p>
+        )}
       </div>
       <span className="claim-tag">{VERDICT_LABEL[claim.verdict]}</span>
     </li>

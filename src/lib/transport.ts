@@ -17,6 +17,12 @@ export interface HttpResult {
   text: string;
 }
 
+/** 原生层抛回来的网络错误：带上失败分类，便于给出针对性提示 */
+export interface TransportError extends Error {
+  code?: string;
+  via?: string;
+}
+
 interface PostReq {
   url: string;
   headers: Record<string, string>;
@@ -117,7 +123,12 @@ function nativeBridge(): NativeBridge | null {
   const w = window as any;
   if (w.veritasNative?.httpPost) {
     const unwrap = (res: any): HttpResult => {
-      if (res && !res.status && res.error) throw new Error(String(res.error));
+      if (res && !res.status && res.error) {
+        const err = new Error(String(res.error)) as TransportError;
+        err.code = typeof res.code === 'string' ? res.code : undefined;
+        err.via = typeof res.via === 'string' ? res.via : undefined;
+        throw err;
+      }
       return { status: Number(res?.status ?? 0), text: String(res?.text ?? '') };
     };
     return {
@@ -226,4 +237,56 @@ export async function getText(
 /** 原生环境标记：CSP/权限提示与故障排查用 */
 export function hasNativeTransport(): boolean {
   return runtime() !== 'web';
+}
+
+/* --------------------------------------------------------------- 网络诊断 */
+
+export interface NetProbe {
+  ok: boolean;
+  status?: number;
+  ms: number;
+  error?: string;
+}
+
+export interface NetCheckResult {
+  url: string;
+  host: string;
+  dns: { ok: boolean; ms: number; addresses?: string[]; error?: string } | null;
+  resolve?: { ok: boolean; addresses?: string[]; error?: string } | null;
+  proxy: string;
+  chromium: NetProbe | null;
+  node: NetProbe | null;
+  doh: { ips: string[] } | null;
+  error?: string;
+}
+
+/** 桌面端才有：分别探测系统 DNS、系统代理、Chromium 通道、Node 通道 */
+export async function netCheck(url: string): Promise<NetCheckResult | null> {
+  const w = window as any;
+  if (typeof w.veritasNative?.netCheck !== 'function') return null;
+  try {
+    return (await w.veritasNative.netCheck({ url })) as NetCheckResult;
+  } catch {
+    return null;
+  }
+}
+
+/** 把诊断结果压成一行人话，附在错误提示后面 */
+export function describeNetCheck(r: NetCheckResult | null): string {
+  if (!r) return '';
+  const bits: string[] = [];
+
+  if (r.dns?.ok) bits.push(`DNS 正常（${r.dns.addresses?.slice(0, 2).join(' / ') || '已解析'}）`);
+  else if (r.resolve?.ok && r.resolve.addresses?.length)
+    bits.push(`系统解析接口失败（${r.dns?.error || '未知'}），但 DNS 查询可用：${r.resolve.addresses.slice(0, 2).join(' / ')}`);
+  else bits.push(`DNS 解析失败（${r.dns?.error || '未知'}）`);
+
+  const proxy = (r.proxy || '').trim();
+  bits.push(proxy.startsWith('PROXY') || proxy.startsWith('HTTPS') ? `系统代理 ${proxy}` : '直连（无系统代理）');
+
+  if (r.chromium) bits.push(r.chromium.ok ? `系统网络通道正常（${r.chromium.status}）` : `系统网络通道失败：${r.chromium.error}`);
+  if (r.node) bits.push(r.node.ok ? `程序内通道正常（${r.node.status}）` : `程序内通道失败：${r.node.error}`);
+  if (r.doh?.ips?.length) bits.push(`DoH 可用（${r.doh.ips.slice(0, 2).join(' / ')}）`);
+
+  return bits.join(' · ');
 }

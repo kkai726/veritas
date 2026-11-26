@@ -1,7 +1,7 @@
 {
   "name": "veritas",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "description": "AI 事实核查工作台 — 逐段取证，输出可信度评分与 Markdown 报告",
   "homepage": "https://kkai726.github.io/veritas/",

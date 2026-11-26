@@ -64,9 +64,9 @@ const SKIP_HOSTS = [
 ];
 
 const PLAN: Record<Settings['depth'], { queries: number; fetch: number; evidence: number }> = {
-  quick: { queries: 2, fetch: 2, evidence: 6 },
-  standard: { queries: 4, fetch: 4, evidence: 10 },
-  deep: { queries: 6, fetch: 6, evidence: 14 },
+  quick: { queries: 3, fetch: 2, evidence: 7 },
+  standard: { queries: 6, fetch: 4, evidence: 12 },
+  deep: { queries: 10, fetch: 6, evidence: 16 },
 };
 
 const UA =
@@ -414,18 +414,26 @@ export async function research(
   const gate = hooks.checkpoint ?? (async () => {});
   const progress = hooks.onProgress ?? (() => {});
 
-  // 长文按段落轮流取查询词，避免全部集中在开头几句
-  const perParagraph = paragraphTexts.map((p) => queriesFor(p, plan.queries > 2 ? 2 : 1));
+  // 长文按段落轮流取查询词：先第一轮覆盖所有段落，再回头补第二轮的细查询
+  const perParagraph = paragraphTexts.map((p) => queriesFor(p, 2));
   const flat: string[] = [];
   for (let round = 0; round < 2; round += 1) {
     for (const list of perParagraph) {
       const q = list[round];
-      if (q) flat.push(q);
+      if (q && !flat.includes(q)) flat.push(q);
     }
   }
-  for (const q of flat) {
-    if (queries.length >= plan.queries) break;
-    if (!queries.includes(q)) queries.push(q);
+
+  // 段落多于查询预算时均匀抽样，保证文档从头到尾都有代表，
+  // 而不是只查前几段、让后面的主张一条来源都挂不上
+  if (flat.length <= plan.queries) {
+    queries.push(...flat);
+  } else {
+    const stride = flat.length / plan.queries;
+    for (let i = 0; i < plan.queries; i += 1) {
+      const q = flat[Math.min(flat.length - 1, Math.floor(i * stride))];
+      if (q && !queries.includes(q)) queries.push(q);
+    }
   }
 
   if (!queries.length) {
@@ -542,6 +550,81 @@ export async function research(
   if (pages === 0) notes.push('命中了搜索结果，但正文抓取失败，证据仅来自搜索摘要。');
 
   return { evidence, queries, engines: [...engines], hits: hits.length, pages, notes };
+}
+
+/**
+ * 二次定向检索：模型判定「缺证据 / 无法核实」且没有挂来源的主张，
+ * 用主张原文再查一次，补上第一轮没覆盖到的来源。
+ *
+ * 只补来源，不改判定——模型说「缺证据」可能是它没看到相关来源，
+ * 也可能是证据确实不支持，交给上层按词面匹配决定是否挂链接。
+ */
+export async function researchClaims(
+  claims: string[],
+  depth: Settings['depth'],
+  opts: {
+    signal?: AbortSignal;
+    checkpoint?: () => Promise<void>;
+    exclude?: Set<string>;
+    startAt?: number;
+    onProgress?: (label: string) => void;
+  } = {},
+): Promise<Evidence[]> {
+  const clean = claims
+    .map((c) => c.replace(/\s+/g, ' ').trim())
+    .filter((c) => c.length >= 8)
+    .slice(0, depth === 'deep' ? 4 : 3);
+  if (!clean.length) return [];
+
+  const gate = opts.checkpoint ?? (async () => {});
+  const exclude = opts.exclude ?? new Set<string>();
+  // 整句当检索词太长，命中率反而低：先按候选词抽取，取不到再退回原句
+  const queries = Array.from(
+    new Set(clean.map((c) => queriesFor(c, 1)[0] || truncate(c, 40))),
+  ).slice(0, 3);
+
+  await gate();
+  opts.onProgress?.(`补检 ${queries.length} 条没有来源的主张…`);
+
+  const results = await Promise.all(
+    queries.map(async (query) => {
+      const cached = cacheGet(searchCache, query.toLowerCase(), SEARCH_TTL);
+      if (cached) return cached.hits;
+      const result = await searchAny(query, opts.signal);
+      cacheSet(searchCache, query.toLowerCase(), result);
+      return result.hits;
+    }),
+  );
+
+  const hits: Hit[] = [];
+  const seen = new Set(exclude);
+  for (const list of results) {
+    for (const hit of list) {
+      if (!/^https?:\/\//i.test(hit.url)) continue;
+      const key = dedupeKey(hit.url);
+      if (seen.has(key)) continue;
+      if (SKIP_HOSTS.some((h) => hit.url.includes(h))) continue;
+      seen.add(key);
+      hits.push(hit);
+    }
+  }
+  if (!hits.length) return [];
+
+  const targets = hits.slice(0, 2);
+  const texts = await Promise.all(
+    targets.map((hit) => fetchPageText(hit.url, opts.signal).catch(() => null)),
+  );
+
+  return targets.map((hit, i) => {
+    const text = texts[i];
+    return {
+      sid: `E${(opts.startAt ?? 0) + i + 1}`,
+      title: truncate(hit.title || hostOf(hit.url), 90),
+      url: hit.url,
+      publisher: hostOf(hit.url),
+      snippet: truncate(text ? bestExcerpt(text, hit.query ?? queries[0]) : hit.snippet || hit.title, 340),
+    };
+  });
 }
 
 /** 把证据整理成给模型的紧凑文本：每条一行来源 + 一段摘录 */

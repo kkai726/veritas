@@ -2,11 +2,11 @@ import { extractFromUrl } from './extract';
 import { ParseError, extractJson, looksLikeJson } from './parse';
 import { buildRepairPrompt, buildSystemPrompt, buildUserPrompt } from './prompt';
 import { runModel } from './providers';
-import { buildReport } from './report';
-import { evidenceBlock, research } from './research';
+import { buildReport, toVerdict } from './report';
+import { evidenceBlock, research, researchClaims } from './research';
 import { configOf, presetOf } from './settings';
 import type { Report, Settings } from './types';
-import { countChars, looksLikeUrl, normalizeUrl } from './utils';
+import { countChars, dedupeKey, looksLikeUrl, normalizeUrl } from './utils';
 
 export type Stage = 'verify' | 'extract' | 'research' | 'analyze' | 'compose';
 
@@ -62,6 +62,34 @@ export function splitParagraphs(text: string, limit = 14): string[] {
 
 /** 交给模型的正文上限：再长只会拖慢速度、提高截断风险 */
 const MAX_INPUT_CHARS = 24_000;
+
+/** 模型判为「缺证据 / 无法核实」且自己没挂来源的主张：值得再定向搜一次 */
+function claimsWithoutSources(json: any): string[] {
+  const picked: { text: string; weight: number }[] = [];
+  for (const p of Array.isArray(json?.paragraphs) ? json.paragraphs : []) {
+    for (const c of Array.isArray(p?.claims) ? p.claims : []) {
+      const text = typeof c?.text === 'string' ? c.text.trim() : '';
+      if (text.length < 8) continue;
+      const verdict = toVerdict(c?.verdict ?? c?.status);
+      if (verdict !== 'unsupported' && verdict !== 'unknown') continue;
+      const cited = [c?.sources, c?.urls]
+        .filter(Array.isArray)
+        .flat()
+        .some((u) => typeof u === 'string' && /^https?:\/\//i.test(u));
+      if (cited) continue;
+      // 带数字、年份、专名的主张最值得补检：这类「已确认的事实」查得到就该挂上来源
+      let weight = 0;
+      if (/\d/.test(text)) weight += 2;
+      if (/[A-Za-z]{3,}/.test(text)) weight += 1;
+      if (text.length <= 60) weight += 1;
+      picked.push({ text, weight });
+    }
+  }
+  return picked
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 4)
+    .map((c) => c.text);
+}
 
 export async function factCheck({ settings, input, mode, onStage, signal, checkpoint }: FactCheckInput): Promise<Report> {
   const started = performance.now();
@@ -157,6 +185,25 @@ export async function factCheck({ settings, input, mode, onStage, signal, checkp
   }
   const modelMs = Math.round(performance.now() - tModel);
 
+  // 3. 补检：模型说「缺证据」且没挂来源的主张，用原文再定向搜一轮。
+  //    多数「明明查得到却说没证据」是首轮查询词没覆盖到这一段，而不是真的无据。
+  let evidence = found.evidence;
+  if (found.hits > 0 && found.evidence.length < 12) {
+    const gap = claimsWithoutSources(json);
+    if (gap.length) {
+      await gate();
+      report('compose', `补检 ${gap.length} 条没有来源的主张…`);
+      const extra = await researchClaims(gap, settings.depth, {
+        signal,
+        checkpoint: gate,
+        exclude: new Set(found.evidence.map((e) => dedupeKey(e.url))),
+        startAt: evidence.length,
+        onProgress: (label) => report('compose', label),
+      });
+      if (extra.length) evidence = [...evidence, ...extra];
+    }
+  }
+
   await gate();
   report('compose', '整理来源与 Markdown…');
   const built = buildReport({
@@ -172,7 +219,7 @@ export async function factCheck({ settings, input, mode, onStage, signal, checkp
     sourceTitle,
     text,
     elapsedMs: Math.round(performance.now() - started),
-    evidence: found.evidence,
+    evidence,
     evidenceStat: {
       queries: found.queries.length,
       hits: found.hits,

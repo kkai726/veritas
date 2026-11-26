@@ -37,9 +37,9 @@ Veritas 不下一句话结论，它把一段话拆开看：
 
 | 平台 | 文件 | 大小 | 说明 |
 | :--- | :--- | :--- | :--- |
-| Windows 10/11 x64 | [`Veritas-Setup-1.2.0-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-Setup-1.2.0-x64.exe) | 115.98 MB | NSIS 安装版，可选安装目录、生成桌面快捷方式 |
-| Windows 10/11 x64 | [`Veritas-Portable-1.2.0-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-Portable-1.2.0-x64.exe) | 105.56 MB | 免安装单文件，双击即用，放进 U 盘也能跑 |
-| Android 7.0+ (arm64) | [`Veritas-1.2.0-android.apk`](https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-1.2.0-android.apk) | 206 KB | `minSdk 24` / `targetSdk 35`，原生 WebView 壳，不依赖 Capacitor |
+| Windows 10/11 x64 | [`Veritas-Setup-1.2.1-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.2.1/Veritas-Setup-1.2.1-x64.exe) | 115.98 MB | NSIS 安装版，可选安装目录、生成桌面快捷方式 |
+| Windows 10/11 x64 | [`Veritas-Portable-1.2.1-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.2.1/Veritas-Portable-1.2.1-x64.exe) | 105.57 MB | 免安装单文件，双击即用，放进 U 盘也能跑 |
+| Android 7.0+ (arm64) | [`Veritas-1.2.1-android.apk`](https://github.com/kkai726/veritas/releases/download/v1.2.1/Veritas-1.2.1-android.apk) | 206 KB | `minSdk 24` / `targetSdk 35`，原生 WebView 壳，不依赖 Capacitor |
 | 任意 Linux / NAS | [`ghcr.io/kkai726/veritas:latest`](https://github.com/kkai726/veritas/pkgs/container/veritas) | 20 MB | Nginx 托管静态站，自托管网页版（见 [自托管](#自托管镜像)） |
 
 安装前的两件事，都是系统层面的，不是程序问题：
@@ -48,6 +48,17 @@ Veritas 不下一句话结论，它把一段话拆开看：
 - **Android** 的 APK 用调试证书签名（`CN=Veritas, OU=Dev`），安装时需允许「未知来源」，且不能与后续正式签名的版本覆盖安装。
 
 每个产物的 SHA-256 都写在 [发布说明](https://github.com/kkai726/veritas/releases) 里，下载后可以自行核对。
+
+## 修复了什么（v1.2.1）
+
+- **连不上模型：找到了根因**。Windows 上开着代理软件（TUN 模式、改过 hosts、系统 DNS 被接管）时，Node 的 `getaddrinfo` 会报 `ENOENT`——而同一个域名浏览器能打开、PowerShell 也解析得出。现在请求按三层走：Chromium 网络栈（走系统代理与 PAC）→ 应用内通道（c-ares / DoH 解析后按 IP 直连，完全不依赖 `getaddrinfo`）→ 都不通才报错；网络类失败还会自动重试一次。错误提示按类型分开：DNS 解析不到、TLS 被拦、连接被重置，各有各的说明。
+- **「测试连接」带实测诊断**。失败时会把 DNS、系统代理、两条网络通道的探测结果一并写进提示，不用再猜是 Key 的问题还是网络的问题。
+- **「明明查得到却说没有证据」**。三个原因一起修：
+  - *检索覆盖*：查询词按段落均匀抽样，长文不再只查前几段；查询预算 4 → 6 条（深度档 10 条），证据上限 10 → 12 条（深度档 16 条）。
+  - *二次补检*：模型判「缺证据 / 无法核实」又没挂来源的主张，挑带数字、年份、专名的那几条再定向搜一轮，补到的来源直接进证据池。
+  - *匹配算法*：主张与证据的兜底匹配改成按覆盖率打分（数字与英文词元加权）。原来是「命中数 ÷ 证据长度」，长一点的摘录会被系统性压低分数，明明相关的来源也挂不上。
+- **来源只认证据池**。模型自己编的、不在检索结果里的 URL 会被丢掉，改由词面匹配补真实来源——编造链接比「暂时没有来源」更糟。
+- **「没查到」与「不成立」分开说**。缺证据的主张下面会写清「本次检索没有匹配到相关来源——表示没查到，不等于事实不成立」。
 
 ## 这一版做了什么（v1.2.0）
 
@@ -114,7 +125,7 @@ Veritas 不下一句话结论，它把一段话拆开看：
 
 | 操作 | 位置 | 行为 |
 | :--- | :--- | :--- |
-| 暂停 | 核查卡片 / 任务卡 | 每个网络请求前に过一道闸门；已经发出的请求等它返回，之后不再发新请求 |
+| 暂停 | 核查卡片 / 任务卡 | 每个网络请求前都会过一道闸门；已经发出的请求等它返回，之后不再发新请求 |
 | 继续 | 同上 | 从暂停的那一步继续，不重跑已经完成的阶段 |
 | 收起 | 核查卡片 | 回到首页，任务继续；右下角任务卡可随时打开 |
 | 取消 | 卡片 / 任务卡 | 中断当前请求，任务标记为已取消，输入内容保留可重跑 |
@@ -270,7 +281,7 @@ npm run build            # tsc --noEmit && vite build
 npm run app:win          # electron-builder --win → release/
 ```
 
-产物是 `release/Veritas Setup 1.2.0.exe`（安装版）与 `release/Veritas 1.2.0.exe`（免安装）。开发时用 `npm run electron`（先构建再开窗口）。
+产物是 `release/Veritas Setup 1.2.1.exe`（安装版）与 `release/Veritas 1.2.1.exe`（免安装）。开发时用 `npm run electron`（先构建再开窗口）。
 
 打包时的两个环境坑，如果脚本跑不起来可以先看这里：
 
