@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Check,
+  CheckCircle2,
   ExternalLink,
   Eye,
   EyeOff,
@@ -11,10 +12,19 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { PROVIDERS, configOf, isConfigured, presetOf } from '../lib/settings';
+import {
+  PROVIDERS,
+  clearVerified,
+  configOf,
+  isConfigured,
+  isVerified,
+  markVerified,
+  presetOf,
+} from '../lib/settings';
 import { testConnection } from '../lib/providers';
 import { runtime, runtimeLabel } from '../lib/transport';
 import type { ProviderId, Settings } from '../lib/types';
+import { formatTime } from '../lib/utils';
 
 interface Props {
   settings: Settings;
@@ -28,11 +38,14 @@ export function SettingsDialog({ settings, initialProvider, onSave, onClose }: P
   const [selected, setSelected] = useState<ProviderId>(initialProvider || settings.activeId);
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const preset = useMemo(() => presetOf(selected), [selected]);
   const config = useMemo(() => configOf(draft, selected), [draft, selected]);
   const configured = isConfigured(draft, selected);
+  const verified = isVerified(draft, selected);
+  const mark = draft.verified?.[selected];
   const onWeb = runtime() === 'web';
 
   useEffect(() => {
@@ -47,16 +60,19 @@ export function SettingsDialog({ settings, initialProvider, onSave, onClose }: P
     };
   }, [onClose]);
 
-  const patch = (next: Partial<Settings>) => setDraft((prev) => ({ ...prev, ...next }));
-
   const patchConfig = (next: Partial<typeof config>) => {
-    setDraft((prev) => ({
-      ...prev,
-      configs: {
-        ...prev.configs,
-        [selected]: { ...configOf(prev, selected), ...next },
-      },
-    }));
+    setDraft((prev) => {
+      const nextConfig = { ...configOf(prev, selected), ...next };
+      const stillVerified =
+        prev.verified?.[selected]?.model === nextConfig.model && Boolean(nextConfig.apiKey);
+      const verifiedMap = { ...prev.verified };
+      if (!stillVerified) delete verifiedMap[selected];
+      return {
+        ...prev,
+        verified: verifiedMap,
+        configs: { ...prev.configs, [selected]: nextConfig },
+      };
+    });
     setTestResult(null);
   };
 
@@ -70,34 +86,48 @@ export function SettingsDialog({ settings, initialProvider, onSave, onClose }: P
     setDraft((prev) => {
       const configs = { ...prev.configs };
       delete configs[selected];
-      return { ...prev, configs };
+      return clearVerified({ ...prev, configs }, selected);
     });
     setTestResult(null);
   };
 
-  const runTest = async () => {
+  const runTest = async (source: Settings = draft): Promise<boolean> => {
     setTesting(true);
     setTestResult(null);
     try {
-      const message = await testConnection(selected, config);
+      const message = await testConnection(selected, configOf(source, selected));
+      setDraft((prev) => markVerified(prev, selected, configOf(prev, selected).model));
       setTestResult({ ok: true, message });
+      return true;
     } catch (err) {
       const e = err as { message?: string; hint?: string };
       setTestResult({ ok: false, message: [e.message, e.hint].filter(Boolean).join(' — ') });
+      return false;
     } finally {
       setTesting(false);
     }
   };
 
-  const canSave = configured || Boolean(draft.configs[draft.activeId]?.apiKey);
-
-  const save = () => {
+  // 保存时会先跑一次连通性测试：没测通的模型不进核查流程
+  const save = async () => {
     const next: Settings = {
       ...draft,
       activeId: isConfigured(draft, selected) ? selected : draft.activeId,
     };
-    onSave(next);
+    if (!isConfigured(next, selected) || isVerified(next, selected)) {
+      onSave(next);
+      return;
+    }
+    setSaving(true);
+    const ok = await runTest(next);
+    setSaving(false);
+    if (!ok) return;
+    const model = configOf(next, selected).model;
+    onSave(markVerified(next, selected, model));
   };
+
+  const busy = testing || saving;
+  const canSave = configured || Boolean(draft.configs[draft.activeId]?.apiKey);
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -105,7 +135,7 @@ export function SettingsDialog({ settings, initialProvider, onSave, onClose }: P
         <div className="dialog-head">
           <div>
             <p className="eyebrow">Bring your own key</p>
-            <h2 className="dialog-title">模型与检索</h2>
+            <h2 className="dialog-title">模型设置</h2>
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="关闭" type="button">
             <X size={16} />
@@ -118,6 +148,7 @@ export function SettingsDialog({ settings, initialProvider, onSave, onClose }: P
             <div className="provider-grid">
               {PROVIDERS.map((p) => {
                 const ready = isConfigured(draft, p.id);
+                const ok = isVerified(draft, p.id);
                 return (
                   <button
                     key={p.id}
@@ -129,14 +160,13 @@ export function SettingsDialog({ settings, initialProvider, onSave, onClose }: P
                       <span className="provider-name">{p.name}</span>
                       {selected === p.id ? (
                         <Check size={13} strokeWidth={2.4} />
+                      ) : ok ? (
+                        <CheckCircle2 size={13} strokeWidth={2.2} className="provider-ok" />
                       ) : ready ? (
                         <span className="provider-ready" title="已配置" />
                       ) : null}
                     </span>
                     <span className="provider-blurb">{p.blurb}</span>
-                    <span className={`provider-tag ${p.supportsSearch ? 'is-live' : ''}`}>
-                      {p.supportsSearch ? '支持联网' : '无联网'}
-                    </span>
                   </button>
                 );
               })}
@@ -227,25 +257,27 @@ export function SettingsDialog({ settings, initialProvider, onSave, onClose }: P
             </div>
           )}
 
-          <div className={preset.supportsSearch ? 'search-row' : 'search-row is-disabled'}>
-            <input
-              type="checkbox"
-              checked={draft.search && preset.supportsSearch}
-              disabled={!preset.supportsSearch}
-              onChange={(e) => patch({ search: e.target.checked })}
-            />
-            <span>
-              <strong>启用联网检索</strong>
-              <em>
-                {preset.supportsSearch
-                  ? '通过 OpenAI 官方 web_search 获取实时来源，报告里的链接可直达原文'
-                  : `${preset.name} 没有内置联网，核查仅依据模型知识，判断会偏保守`}
-              </em>
-            </span>
+          <div className="verify-row">
+            {verified ? (
+              <span className="verify-ok">
+                <CheckCircle2 size={14} strokeWidth={2.2} />
+                已验证可用{mark ? `（${formatTime(mark.at)}）` : ''}
+              </span>
+            ) : (
+              <span className="verify-idle">
+                <Info size={14} strokeWidth={1.9} />
+                保存时会先测一次连通性，通过后才用于核查
+              </span>
+            )}
           </div>
 
           <div className="dialog-actions">
-            <button type="button" className="ghost-btn" onClick={runTest} disabled={testing || !config.apiKey || !config.model}>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => void runTest()}
+              disabled={busy || !config.apiKey || !config.model}
+            >
               {testing ? <Loader2 size={14} className="spin" /> : <PlugZap size={14} />}
               测试连接
             </button>
@@ -275,14 +307,19 @@ export function SettingsDialog({ settings, initialProvider, onSave, onClose }: P
 
         <div className="dialog-foot">
           <span className="dialog-foot-note">
-            {isConfigured(draft, selected) ? `${preset.name} · ${config.model}` : '选一个服务商，填好 Key 即可'}
+            {verified
+              ? `${preset.name} · ${config.model} · 已验证`
+              : isConfigured(draft, selected)
+                ? `${preset.name} · ${config.model} · 待验证`
+                : '选一个服务商，填好 Key 即可'}
           </span>
           <div className="dialog-foot-right">
             <button type="button" className="ghost-btn" onClick={onClose}>
               取消
             </button>
-            <button type="button" className="cta cta--sm" disabled={!canSave} onClick={save}>
-              保存设置
+            <button type="button" className="cta cta--sm" disabled={!canSave || busy} onClick={() => void save()}>
+              {saving && <Loader2 size={14} className="spin" />}
+              {saving ? '验证中' : '保存设置'}
             </button>
           </div>
         </div>

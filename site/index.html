@@ -775,12 +775,12 @@
         <div class="hero-cta">
           <a
             class="btn btn-solid"
-            href="https://github.com/kkai726/veritas/releases/download/v1.0.0/Veritas-Setup-1.0.0-x64.exe"
+            href="https://github.com/kkai726/veritas/releases/download/v1.1.0/Veritas-Setup-1.1.0-x64.exe"
             >下载 Windows 版</a
           >
           <a
             class="btn btn-ghost"
-            href="https://github.com/kkai726/veritas/releases/download/v1.0.0/Veritas-1.0.0-android.apk"
+            href="https://github.com/kkai726/veritas/releases/download/v1.1.0/Veritas-1.1.0-android.apk"
             >下载 Android 版</a
           >
           <a class="btn btn-ghost" href="#download">全部产物与校验和</a>
@@ -827,7 +827,7 @@
           <div class="step">
             <i>STEP 02</i>
             <h3>取证</h3>
-            <p>调动所选模型的检索能力，去官方公告、监管文件、论文与主流媒体找证据，并要求给出可访问的 URL。</p>
+            <p>应用自己搜公开来源（360 / DuckDuckGo / 维基），只把命中的句子摘成证据，不让模型花额度去联网。</p>
           </div>
           <div class="step">
             <i>STEP 03</i>
@@ -858,6 +858,7 @@
               <li><b>逐段卡片</b>：原文引用、判定理由、每条主张的支持程度与相关度</li>
               <li><b>来源清单</b>：标题 + 发布机构 + 编号，与正文引用一一对应</li>
               <li><b>核查局限</b>：明确写出本次核查没做到的事</li>
+              <li><b>历史存档</b>：每次核查自动存本机，顶栏「历史」可回看、可逐条删除</li>
             </ul>
           </div>
           <div class="panel">
@@ -886,7 +887,7 @@
           <span class="aside">同一份前端代码<br />三套网络通道</span>
         </div>
         <p class="sub">
-          浏览器受同源策略约束，直连 OpenAI 这类接口会被拦在响应体之外。所以真正的联网检索能力放在客户端：请求由主进程或原生层发出，不受 CORS 影响。
+          浏览器受同源策略约束，直连 OpenAI 这类接口会被拦在响应体之外。所以联网能力放在客户端：模型请求与检索请求都由主进程或原生层发出，不受 CORS 影响。
         </p>
 
         <div class="tablewrap">
@@ -946,7 +947,7 @@
         <div class="head">
           <span class="no">03</span>
           <h2>下载</h2>
-          <span class="aside">v1.0.0 · 2026-11 · <a
+          <span class="aside">v1.1.0 · 2026-11 · <a
               href="https://github.com/kkai726/veritas/releases"
               style="text-decoration: underline dotted"
               >全部版本</a
@@ -960,33 +961,33 @@
           <div class="card">
             <span class="k">Windows · 安装版</span>
             <h3>Setup x64</h3>
-            <p class="file">Veritas-Setup-1.0.0-x64.exe</p>
+            <p class="file">Veritas-Setup-1.1.0-x64.exe</p>
             <p class="meta">116 MB · 可选安装目录、生成桌面快捷方式、可卸载</p>
             <a
               class="btn btn-solid"
-              href="https://github.com/kkai726/veritas/releases/download/v1.0.0/Veritas-Setup-1.0.0-x64.exe"
+              href="https://github.com/kkai726/veritas/releases/download/v1.1.0/Veritas-Setup-1.1.0-x64.exe"
               >下载</a
             >
           </div>
           <div class="card">
             <span class="k">Windows · 免安装</span>
             <h3>Portable x64</h3>
-            <p class="file">Veritas-Portable-1.0.0-x64.exe</p>
+            <p class="file">Veritas-Portable-1.1.0-x64.exe</p>
             <p class="meta">106 MB · 单文件双击即用，放 U 盘也能跑</p>
             <a
               class="btn btn-ghost"
-              href="https://github.com/kkai726/veritas/releases/download/v1.0.0/Veritas-Portable-1.0.0-x64.exe"
+              href="https://github.com/kkai726/veritas/releases/download/v1.1.0/Veritas-Portable-1.1.0-x64.exe"
               >下载</a
             >
           </div>
           <div class="card">
             <span class="k">Android</span>
             <h3>APK arm64</h3>
-            <p class="file">Veritas-1.0.0-android.apk</p>
-            <p class="meta">190 KB · Android 7.0+ · 调试签名，需允许未知来源</p>
+            <p class="file">Veritas-1.1.0-android.apk</p>
+            <p class="meta">198 KB · Android 7.0+ · 调试签名，需允许未知来源</p>
             <a
               class="btn btn-ghost"
-              href="https://github.com/kkai726/veritas/releases/download/v1.0.0/Veritas-1.0.0-android.apk"
+              href="https://github.com/kkai726/veritas/releases/download/v1.1.0/Veritas-1.1.0-android.apk"
               >下载</a
             >
           </div>
@@ -1019,7 +1020,7 @@ docker run -d --name veritas -p 8080:80 ghcr.io/kkai726/veritas:latest</pre>
               <tr>
                 <th>服务商</th>
                 <th>默认模型</th>
-                <th>内置联网</th>
+                <th>检索方式</th>
                 <th>备注</th>
               </tr>
             </thead>
@@ -1027,32 +1028,32 @@ docker run -d --name veritas -p 8080:80 ghcr.io/kkai726/veritas:latest</pre>
               <tr>
                 <td>DeepSeek</td>
                 <td><code>deepseek-chat</code></td>
-                <td class="no">否</td>
+                <td>应用内检索</td>
                 <td>中文稳、价格低，日常核查够用</td>
               </tr>
               <tr>
                 <td>MiMo</td>
                 <td><code>mimo-v2.6-pro</code></td>
-                <td class="no">否</td>
+                <td>应用内检索</td>
                 <td>小米开放平台，OpenAI 兼容</td>
               </tr>
               <tr>
                 <td>GLM</td>
                 <td><code>glm-4.6</code></td>
-                <td class="no">否</td>
+                <td>应用内检索</td>
                 <td>智谱开放平台，<code>/api/paas/v4</code></td>
               </tr>
               <tr>
                 <td>Kimi</td>
                 <td><code>kimi-k3-1-pro</code></td>
-                <td class="no">否</td>
+                <td>应用内检索</td>
                 <td>长文本见长，适合整篇核查</td>
               </tr>
               <tr>
                 <td>OpenAI</td>
                 <td><code>gpt-4.1</code></td>
-                <td class="yes">是</td>
-                <td>唯一原生 <code>web_search</code>，需客户端</td>
+                <td>应用内 · 兜底 <code>web_search</code></td>
+                <td>本地检索空手时才用官方检索</td>
               </tr>
               <tr>
                 <td>自定义</td>
@@ -1081,7 +1082,7 @@ docker run -d --name veritas -p 8080:80 ghcr.io/kkai726/veritas:latest</pre>
           <p>
             曾经有过一个网页版，后来下线了，原因很具体：浏览器的跨域策略会让 OpenAI 这类接口的响应体读不到，页面只能拿到一句
             <code>Failed to fetch</code>；就算换成能直连的服务商，把 Key 填在别人部署的网页里也不合适。所以现在只提供客户端——
-            Key 存在你的机器上，请求从你的机器发出。
+            Key 存在你的机器上，检索与模型请求都从你的机器发出。
           </p>
         </div>
 
@@ -1100,6 +1101,7 @@ docker run -d --name veritas -p 8080:80 ghcr.io/kkai726/veritas:latest</pre>
               <li>会因反爬或登录墙抓不到部分链接的正文</li>
               <li>模型仍可能给出看似合理但错误的判断</li>
               <li>未联网的模型有知识截止日期，近期事件容易判错</li>
+              <li>搜索结果页是抓取来的，连续核查可能被限流，此时会换源或降级</li>
             </ul>
           </div>
         </div>

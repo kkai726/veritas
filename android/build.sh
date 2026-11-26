@@ -47,8 +47,8 @@ echo "· 编译资源"
   --java "$OUT/gen" \
   --min-sdk-version 24 \
   --target-sdk-version 35 \
-  --version-code 1 \
-  --version-name "1.0" \
+  --version-code 2 \
+  --version-name "1.1" \
   --auto-add-overlay
 
 echo "· 写入前端资源"

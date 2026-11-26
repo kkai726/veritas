@@ -75,7 +75,7 @@ export const PROVIDERS: ProviderPreset[] = [
     id: 'openai',
     name: 'OpenAI',
     short: 'OpenAI',
-    blurb: '唯一带官方联网检索（web_search）。',
+    blurb: '协议标准；本地检索无结果时可回退 web_search。',
     baseUrl: 'https://api.openai.com/v1',
     defaultModel: 'gpt-4.1',
     models: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-5', 'gpt-5-mini', 'gpt-4o'],
@@ -110,8 +110,8 @@ const LEGACY_KEY = 'veritas.settings.v1';
 
 export const DEFAULT_SETTINGS: Settings = {
   configs: {},
+  verified: {},
   activeId: 'deepseek',
-  search: true,
   depth: 'standard',
 };
 
@@ -134,6 +134,31 @@ export function isConfigured(settings: Settings, id: ProviderId = settings.activ
 
 export function configuredIds(settings: Settings): ProviderId[] {
   return PROVIDERS.filter((p) => isConfigured(settings, p.id)).map((p) => p.id);
+}
+
+/** 该服务商是否已用当前模型测通过 */
+export function isVerified(settings: Settings, id: ProviderId = settings.activeId): boolean {
+  const mark = settings.verified?.[id];
+  if (!mark) return false;
+  const config = configOf(settings, id);
+  return Boolean(config.apiKey) && mark.model === config.model;
+}
+
+export function verifiedIds(settings: Settings): ProviderId[] {
+  return PROVIDERS.filter((p) => isConfigured(settings, p.id) && isVerified(settings, p.id)).map((p) => p.id);
+}
+
+export function markVerified(settings: Settings, id: ProviderId, model: string): Settings {
+  return {
+    ...settings,
+    verified: { ...settings.verified, [id]: { model, at: new Date().toISOString() } },
+  };
+}
+
+export function clearVerified(settings: Settings, id: ProviderId): Settings {
+  const verified = { ...settings.verified };
+  delete verified[id];
+  return { ...settings, verified };
 }
 
 export function resolveBaseUrl(id: ProviderId, config: ProviderConfig): string {
@@ -194,8 +219,8 @@ function migrateLegacy(): Settings | null {
     };
     return {
       configs: config.apiKey ? { [id]: config } : {},
+      verified: {},
       activeId: id,
-      search: old.search ?? true,
       depth: old.depth ?? 'standard',
     };
   } catch {
@@ -213,6 +238,7 @@ export function loadSettings(): Settings {
         ...DEFAULT_SETTINGS,
         ...parsed,
         configs: parsed.configs ?? {},
+        verified: parsed.verified ?? {},
         activeId: PROVIDERS.some((p) => p.id === activeId) ? activeId : DEFAULT_SETTINGS.activeId,
       };
     }

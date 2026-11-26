@@ -194,7 +194,11 @@ export function ReportView({ report, onReset, demo = false, initialView = 'repor
           <h1 className="report-title">{report.title}</h1>
           <p className="report-meta">
             {report.meta.providerName} · {report.meta.model}
-            {report.meta.searchUsed ? ' · 联网' : ' · 离线'}
+            {report.meta.evidence?.hits
+              ? ` · 检索命中 ${report.meta.evidence.hits} 条`
+              : report.meta.searchUsed
+                ? ' · 模型自带检索'
+                : ' · 无外部来源'}
             {' · '}
             {formatTime(report.meta.createdAt)}
             {' · '}

@@ -5,22 +5,22 @@ import type { Stage } from '../lib/pipeline';
 interface Props {
   stage: Stage;
   isUrl: boolean;
-  search: boolean;
   onCancel: () => void;
   providerLabel: string;
   model: string;
 }
 
-const ORDER: Stage[] = ['extract', 'research', 'analyze', 'compose'];
+const ORDER: Stage[] = ['verify', 'extract', 'research', 'analyze', 'compose'];
 
 const LABEL: Record<Stage, string> = {
+  verify: '验证模型可用',
   extract: '读取链接正文',
-  research: '联网检索公开来源',
-  analyze: '逐段比对证据与主张',
+  research: '检索公开来源',
+  analyze: '逐段比对证据',
   compose: '编排核查报告',
 };
 
-export function Processing({ stage, isUrl, search, onCancel, providerLabel, model }: Props) {
+export function Processing({ stage, isUrl, onCancel, providerLabel, model }: Props) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export function Processing({ stage, isUrl, search, onCancel, providerLabel, mode
     return () => clearInterval(timer);
   }, []);
 
-  const stages = ORDER.filter((s) => (s === 'extract' ? isUrl : s === 'research' ? search : true));
+  const stages = ORDER.filter((s) => (s === 'extract' ? isUrl : true));
   const currentIndex = stages.indexOf(stage);
 
   return (
@@ -65,7 +65,7 @@ export function Processing({ stage, isUrl, search, onCancel, providerLabel, mode
       </ol>
 
       <p className="proc-note">
-        联网核查通常需要 20–90 秒。结果包含逐段判定、证据说明与可点击来源。
+        检索在应用内完成，抓到的证据只以摘要形式交给模型，比模型自己联网更省额度。通常需要 20–90 秒。
       </p>
     </section>
   );

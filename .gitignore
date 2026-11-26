@@ -41,4 +41,5 @@ android/build/
 android/app/src/main/assets/public/
 *.keystore
 release-win/
+release-v11/
 _old_release_1/

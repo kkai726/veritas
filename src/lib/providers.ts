@@ -22,6 +22,8 @@ export interface RunOptions {
   system: string;
   user: string;
   signal?: AbortSignal;
+  /** 只在应用内检索失败时，才允许模型自己联网（OpenAI web_search） */
+  allowModelSearch?: boolean;
 }
 
 const REQUEST_TIMEOUT = 240_000;
@@ -124,7 +126,7 @@ async function requestJson(
       if (parentSignal?.aborted) throw new ProviderError('已取消', { code: 'aborted' });
       throw new ProviderError('请求超时', {
         code: 'timeout',
-        hint: '模型 4 分钟没有返回。换更快的模型、把深度调成「快速」，或关掉联网检索再试。',
+        hint: '模型 4 分钟没有返回。换更快的模型、把深度调成「快速」，或减少段落数量再试。',
       });
     }
 
@@ -196,15 +198,16 @@ async function runOpenAIResponses(opts: RunOptions, notes: string[]): Promise<Ru
     return requestJson(`${base}/responses`, { Authorization: `Bearer ${config.apiKey}` }, body, ctx, signal);
   };
 
+  const wantTools = opts.allowModelSearch !== false;
   let data: any;
   try {
-    data = await call(true);
+    data = await call(wantTools);
   } catch (err) {
     const e = err as ProviderError;
-    if (e.status === 400 || e.status === 404) {
+    if (e.status === 400 || e.status === 404 || e.status === 422) {
       try {
         data = await call(false);
-        notes.push('当前模型不支持 web_search 工具，已自动降级为无联网模式。');
+        notes.push('当前模型不支持 web_search 工具，本次未使用模型自带检索。');
       } catch {
         return null;
       }
@@ -233,6 +236,22 @@ async function runOpenAIResponses(opts: RunOptions, notes: string[]): Promise<Ru
   return { text, citations, searchUsed: searched || citations.length > 0, notes };
 }
 
+function emptyDetail(data: any): string {
+  const choice = data?.choices?.[0];
+  const usage = data?.usage ?? {};
+  const parts: string[] = [];
+  if (choice?.finish_reason) parts.push(`finish_reason=${choice.finish_reason}`);
+  const refusal = choice?.message?.refusal;
+  if (refusal) parts.push(`refusal=${String(refusal).slice(0, 40)}`);
+  if (usage.completion_tokens != null) {
+    parts.push(`completion_tokens=${usage.completion_tokens}`);
+  }
+  if (usage.reasoning_tokens != null) parts.push(`reasoning_tokens=${usage.reasoning_tokens}`);
+  const reasoning = choice?.message?.reasoning_content;
+  if (typeof reasoning === 'string' && reasoning.trim()) parts.push('仅返回了思考过程');
+  return parts.join(' · ');
+}
+
 /* ------------------------------------------- OpenAI 兼容 /chat/completions */
 async function runChat(opts: RunOptions, notes: string[]): Promise<RunResult> {
   const { provider, config, system, user, signal } = opts;
@@ -241,39 +260,69 @@ async function runChat(opts: RunOptions, notes: string[]): Promise<RunResult> {
   const endpoint = `${base}/chat/completions`;
   const headers: Record<string, string> = { Authorization: `Bearer ${config.apiKey}` };
 
-  const body: Record<string, unknown> = {
-    model: config.model,
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
-    temperature: 0.2,
-    max_tokens: 8000,
-    stream: false,
-  };
+  const messages = [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ];
 
-  let data: any;
-  try {
-    data = await requestJson(
-      endpoint,
-      headers,
-      { ...body, response_format: { type: 'json_object' } },
-      ctx,
-      signal,
-    );
-  } catch (err) {
-    const e = err as ProviderError;
-    if (e.status === 400) {
-      notes.push('该网关不支持 JSON 模式，已改用常规输出。');
-      data = await requestJson(endpoint, headers, body, ctx, signal);
-    } else {
+  const call = async (
+    useJson: boolean,
+    maxTokens: number,
+    tokenKey: 'max_tokens' | 'max_completion_tokens' = 'max_tokens',
+  ): Promise<any> => {
+    const body: Record<string, unknown> = {
+      model: config.model,
+      messages,
+      temperature: 0.2,
+      stream: false,
+      [tokenKey]: maxTokens,
+    };
+    if (useJson) body.response_format = { type: 'json_object' };
+
+    try {
+      return await requestJson(endpoint, headers, body, ctx, signal);
+    } catch (err) {
+      const e = err as ProviderError;
+      if (e.status === 400 && useJson) {
+        notes.push('该网关不支持 JSON 模式，已改用常规输出。');
+        return call(false, maxTokens, tokenKey);
+      }
+      if (e.status === 400 && tokenKey === 'max_tokens' && /max_completion_tokens/i.test(e.message)) {
+        return call(useJson, maxTokens, 'max_completion_tokens');
+      }
       throw e;
     }
+  };
+
+  let data = await call(true, 8000);
+  let choice = data?.choices?.[0];
+  let text = chatText(choice?.message?.content);
+
+  // 空结果最常见的原因是 max_tokens 被思考过程吃光（推理模型），这里自动加额度重试
+  if (!text.trim()) {
+    const truncated = choice?.finish_reason === 'length';
+    notes.push(
+      truncated
+        ? '模型输出在额度上限处被截断（推理过程占用了大部分 token），已提高额度重试。'
+        : '模型首次返回为空，已自动重试一次。',
+    );
+    data = await call(true, truncated ? 24_000 : 16_000);
+    choice = data?.choices?.[0];
+    text = chatText(choice?.message?.content);
   }
 
-  const choice = data?.choices?.[0];
-  const text = chatText(choice?.message?.content);
-  if (!text.trim()) throw new ProviderError('模型返回了空结果，请重试或更换模型。', { code: 'http' });
+  if (!text.trim()) {
+    const detail = emptyDetail(data);
+    throw new ProviderError(
+      `模型返回了空结果${detail ? `（${detail}）` : ''}，请重试或更换模型。`,
+      {
+        code: 'http',
+        hint:
+          '常见原因：推理模型把 max_tokens 全部用于思考、网关只回了 reasoning_content、或触发了内容过滤。' +
+          '可以先在设置里点「测试连接」，或换一个非推理模型（如 deepseek-chat / glm-4.6）。',
+      },
+    );
+  }
 
   const citations: RawCitation[] = [];
   for (const c of data?.citations ?? []) {
@@ -337,19 +386,40 @@ export async function testConnection(id: ProviderId, config: ProviderConfig): Pr
   const clean = normalizeConfig(id, config);
   const base = resolveBaseUrl(id, clean);
   const preset = presetOf(id);
+  const started = performance.now();
 
-  const data = await requestJson(
-    `${base}/chat/completions`,
-    { Authorization: `Bearer ${clean.apiKey}` },
-    {
-      model: clean.model,
-      messages: [{ role: 'user', content: 'ping' }],
-      max_tokens: 1,
-      stream: false,
-    },
-    { provider: id, base },
-  );
+  let data: any;
+  try {
+    data = await requestJson(
+      `${base}/chat/completions`,
+      { Authorization: `Bearer ${clean.apiKey}` },
+      {
+        model: clean.model,
+        messages: [{ role: 'user', content: '只回复两个字：可用' }],
+        max_tokens: 16,
+        stream: false,
+      },
+      { provider: id, base },
+    );
+  } catch (err) {
+    const e = err as ProviderError;
+    if (e.status === 404) {
+      throw new ProviderError('模型不存在或接口地址不对', {
+        code: 'config',
+        hint: `当前模型「${clean.model}」在该地址上没有找到。检查模型名，或把接口地址改成 ${preset.baseUrl || '你的网关地址'}。`,
+      });
+    }
+    throw e;
+  }
 
-  if (!data?.choices) throw new ProviderError('接口返回格式不像 OpenAI 兼容协议', { code: 'http' });
-  return `${preset.name} · ${clean.model} 连接正常`;
+  const choice = data?.choices?.[0];
+  if (!choice) {
+    throw new ProviderError('接口返回格式不像 OpenAI 兼容协议（没有 choices 字段）', {
+      code: 'config',
+      hint: '确认接口地址指向 /v1 这样的 OpenAI 兼容入口，并且模型名是该服务真实存在的。',
+    });
+  }
+
+  const ms = Math.round(performance.now() - started);
+  return `${preset.name} · ${clean.model} 连接正常（${ms} ms）`;
 }

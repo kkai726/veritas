@@ -114,13 +114,19 @@ export function demoReport(): Report {
   return buildReport({
     json: JSON_PAYLOAD,
     raw: 'demo',
-    provider: 'openai',
-    model: 'gpt-4.1',
-    providerName: 'OpenAI',
+    provider: 'deepseek',
+    model: 'deepseek-chat',
+    providerName: 'DeepSeek',
     citations: [],
-    searchUsed: true,
+    searchUsed: false,
     inputType: 'text',
     text: TEXT,
     elapsedMs: 43_800,
+    evidenceStat: {
+      queries: 4,
+      hits: 6,
+      pages: 3,
+      engines: ['DuckDuckGo', 'Wikipedia'],
+    },
   });
 }

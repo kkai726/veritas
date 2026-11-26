@@ -91,7 +91,17 @@ export function buildMarkdown(data: ReportData): string {
     `| 判定分布 | 有据支持 ${counts.supported} · 部分支持 ${counts.partial} · 缺乏证据 ${counts.unsupported} · 与证据矛盾 ${counts.contradicted} · 无法核实 ${counts.unknown} |`,
   );
   out.push(`| 引用来源 | ${data.sources.length} 条 · ${domains.size} 个站点 |`);
-  out.push(`| 核查模型 | ${meta.providerName} · ${meta.model}${meta.searchUsed ? ' · 已联网检索' : ' · 未联网'} |`);
+  out.push(`| 核查模型 | ${meta.providerName} · ${meta.model} |`);
+  const ev = meta.evidence;
+  out.push(
+    `| 检索 | ${
+      ev && ev.queries
+        ? `${ev.queries} 次查询 · 命中 ${ev.hits} 条 · 精读 ${ev.pages} 篇${ev.engines.length ? ` · ${ev.engines.join(' / ')}` : ''}`
+        : meta.searchUsed
+          ? '由模型自带联网检索完成'
+          : '未取到可引用来源'
+    } |`,
+  );
   out.push(`| 生成时间 | ${formatTime(meta.createdAt)} |`);
   out.push('');
 

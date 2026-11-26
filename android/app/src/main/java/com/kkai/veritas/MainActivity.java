@@ -110,43 +110,57 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
-    /** 暴露给页面的桥：window.veritasAndroid.post(...) */
+    /** 暴露给页面的桥：window.veritasAndroid.post(...) / .get(...) */
     private class Bridge {
 
         @JavascriptInterface
         public void post(final String id, final String url, final String headerLines,
                          final String body, final int timeoutMs) {
-            new Thread(() -> {
-                int status = 0;
-                String text;
-                HttpURLConnection conn = null;
-                try {
-                    conn = (HttpURLConnection) new URL(url).openConnection();
-                    conn.setRequestMethod("POST");
-                    conn.setConnectTimeout(30000);
-                    conn.setReadTimeout(timeoutMs > 0 ? timeoutMs : 240000);
-                    conn.setDoOutput(true);
-                    conn.setInstanceFollowRedirects(true);
-                    for (String line : headerLines.split("\n")) {
-                        int i = line.indexOf(':');
-                        if (i > 0) {
-                            conn.setRequestProperty(line.substring(0, i).trim(), line.substring(i + 1).trim());
-                        }
+            new Thread(() -> request(id, url, headerLines, body, timeoutMs, true), "veritas-http").start();
+        }
+
+        @JavascriptInterface
+        public void get(final String id, final String url, final String headerLines, final int timeoutMs) {
+            new Thread(() -> request(id, url, headerLines, null, timeoutMs, false), "veritas-http").start();
+        }
+
+        private void request(String id, String url, String headerLines, String body,
+                             int timeoutMs, boolean isPost) {
+            int status = 0;
+            String text;
+            HttpURLConnection conn = null;
+            try {
+                conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setRequestMethod(isPost ? "POST" : "GET");
+                conn.setConnectTimeout(30000);
+                conn.setReadTimeout(timeoutMs > 0 ? timeoutMs : 240000);
+                conn.setInstanceFollowRedirects(true);
+                conn.setRequestProperty("User-Agent",
+                        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) "
+                                + "Chrome/122.0 Mobile Safari/537.36");
+                conn.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+                for (String line : headerLines.split("\n")) {
+                    int i = line.indexOf(':');
+                    if (i > 0) {
+                        conn.setRequestProperty(line.substring(0, i).trim(), line.substring(i + 1).trim());
                     }
-                    try (OutputStream os = conn.getOutputStream()) {
-                        os.write(body.getBytes(StandardCharsets.UTF_8));
-                    }
-                    status = conn.getResponseCode();
-                    InputStream is = status >= 400 ? conn.getErrorStream() : conn.getInputStream();
-                    text = is == null ? "" : new String(readAll(is), StandardCharsets.UTF_8);
-                } catch (Exception e) {
-                    status = 0;
-                    text = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
-                } finally {
-                    if (conn != null) conn.disconnect();
                 }
-                respond(id, status, text);
-            }, "veritas-http").start();
+                if (isPost) {
+                    conn.setDoOutput(true);
+                    try (OutputStream os = conn.getOutputStream()) {
+                        os.write((body == null ? "" : body).getBytes(StandardCharsets.UTF_8));
+                    }
+                }
+                status = conn.getResponseCode();
+                InputStream is = status >= 400 ? conn.getErrorStream() : conn.getInputStream();
+                text = is == null ? "" : new String(readAll(is), StandardCharsets.UTF_8);
+            } catch (Exception e) {
+                status = 0;
+                text = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+            respond(id, status, text);
         }
 
         private void respond(String id, int status, String text) {

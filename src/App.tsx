@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, ArrowUpRight, FileCheck2, Fingerprint, ListChecks, X } from 'lucide-react';
 import { Composer } from './components/Composer';
+import { HistoryPanel } from './components/HistoryPanel';
 import { Processing } from './components/Processing';
 import { ReportView } from './components/ReportView';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -8,7 +9,17 @@ import { TopBar } from './components/TopBar';
 import { STAGE_TEXT, factCheck, type Stage } from './lib/pipeline';
 import { demoReport } from './lib/demo';
 import { runtimeLabel } from './lib/transport';
-import { configOf, isConfigured, loadSettings, presetOf, saveSettings } from './lib/settings';
+import { historyCount, onHistoryChange, saveHistory, type HistoryEntry } from './lib/history';
+import { testConnection } from './lib/providers';
+import {
+  configOf,
+  isConfigured,
+  isVerified,
+  loadSettings,
+  markVerified,
+  presetOf,
+  saveSettings,
+} from './lib/settings';
 import type { ProviderId, Report, Settings } from './lib/types';
 
 const EXAMPLES = [
@@ -35,6 +46,8 @@ export default function App() {
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [histCount, setHistCount] = useState(() => historyCount());
   const [focusProvider, setFocusProvider] = useState<ProviderId | null>(null);
   const [isDemo, setIsDemo] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -47,11 +60,14 @@ export default function App() {
       setPhase('done');
     }
     if (params.get('panel') === 'settings') setSettingsOpen(true);
+    if (params.get('panel') === 'history') setHistoryOpen(true);
   }, []);
 
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
+
+  useEffect(() => onHistoryChange(() => setHistCount(historyCount())), []);
 
   const patchSettings = (patch: Partial<Settings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
@@ -71,23 +87,37 @@ export default function App() {
       openSettings(settings.activeId);
       return;
     }
+
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setError(null);
     setPhase('running');
-    setStage(mode === 'url' ? 'extract' : settings.search ? 'research' : 'analyze');
+    setStage(isVerified(settings) ? (mode === 'url' ? 'extract' : 'research') : 'verify');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
+    let active = settings;
     try {
+      // 没测过的模型先验证一次，避免跑到一半才报「返回空结果」
+      if (!isVerified(active)) {
+        const config = configOf(active);
+        setStage('verify');
+        await testConnection(active.activeId, config);
+        active = markVerified(active, active.activeId, config.model);
+        setSettings(active);
+      }
+
       const result = await factCheck({
-        settings,
+        settings: active,
         input,
         mode,
         onStage: setStage,
         signal: ctrl.signal,
       });
+
       setReport(result);
       setPhase('done');
+      saveHistory(result);
+      setHistCount(historyCount());
     } catch (err) {
       if (ctrl.signal.aborted) {
         setPhase('idle');
@@ -115,13 +145,28 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const openHistoryEntry = (entry: HistoryEntry) => {
+    setReport({ ...entry.report, raw: '' });
+    setIsDemo(false);
+    setError(null);
+    setPhase('done');
+    setHistoryOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const preset = presetOf(settings.activeId);
   const config = configOf(settings);
   const configured = isConfigured(settings);
+  const verified = isVerified(settings);
 
   return (
     <div className="app">
-      <TopBar settings={settings} onOpenSettings={() => openSettings()} />
+      <TopBar
+        settings={settings}
+        onOpenSettings={() => openSettings()}
+        onOpenHistory={() => setHistoryOpen(true)}
+        historyCount={histCount}
+      />
 
       <main className={`shell ${phase === 'idle' ? 'shell--idle' : ''}`}>
         {phase === 'done' && report ? (
@@ -135,7 +180,6 @@ export default function App() {
           <Processing
             stage={stage}
             isUrl={mode === 'url'}
-            search={settings.search && preset.supportsSearch}
             onCancel={cancel}
             providerLabel={preset.name}
             model={config.model}
@@ -150,7 +194,7 @@ export default function App() {
                 <span className="display-em">查到底</span>。
               </h1>
               <p className="lede">
-                贴入一段文字，或者一个链接。Veritas 拆解段落、联网检索公开来源、逐条比对证据，
+                贴入一段文字，或者一个链接。Veritas 拆解段落、在应用内检索公开来源、逐条比对证据，
                 给出可信度评分、可追溯的引用，以及一份可直接引用的 Markdown 报告。
               </p>
 
@@ -236,23 +280,29 @@ export default function App() {
               ))}
             </div>
 
-            {!configured && (
+            {!configured ? (
               <p className="setup-hint">
                 首次使用需要填写你自己的 API Key，
                 <button type="button" className="link-btn" onClick={() => openSettings()}>
                   选择模型
                 </button>
-                。Key 只保存在这台设备的浏览器。
+                。Key 只保存在这台设备。
               </p>
-            )}
+            ) : !verified ? (
+              <p className="setup-hint">
+                {preset.name} · {config.model} 还没有测通过，
+                <button type="button" className="link-btn" onClick={() => openSettings(settings.activeId)}>
+                  验证一下
+                </button>
+                ——第一次核查前会自动验证，不通过不会开跑。
+              </p>
+            ) : null}
           </>
         )}
       </main>
 
       <footer className="foot">
-        <span>
-          Veritas · 核查结果为辅助判断，重要结论请回到原始来源复核
-        </span>
+        <span>Veritas · 核查结果为辅助判断，重要结论请回到原始来源复核</span>
         <span className="foot-dim">
           {runtimeLabel()} · {STAGE_TEXT.compose} · 由你的模型驱动
         </span>
@@ -270,6 +320,8 @@ export default function App() {
           }}
         />
       )}
+
+      {historyOpen && <HistoryPanel onOpen={openHistoryEntry} onClose={() => setHistoryOpen(false)} />}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Plus } from 'lucide-react';
-import { MAIN_PROVIDERS, configOf, isConfigured, presetOf } from '../lib/settings';
+import { Check, ChevronDown, CheckCircle2, Plus } from 'lucide-react';
+import { MAIN_PROVIDERS, configOf, isConfigured, isVerified, presetOf } from '../lib/settings';
 import type { ProviderId, Settings } from '../lib/types';
 
 interface Props {
@@ -17,6 +17,7 @@ export function ModelPicker({ settings, onPick, onConfigure, disabled }: Props) 
   const preset = presetOf(settings.activeId);
   const config = configOf(settings);
   const ready = isConfigured(settings);
+  const verified = isVerified(settings);
 
   useEffect(() => {
     if (!open) return;
@@ -52,7 +53,10 @@ export function ModelPicker({ settings, onPick, onConfigure, disabled }: Props) 
         title={ready ? `${preset.name} · ${config.model}` : '还没有配置模型'}
       >
         <span className="model-trigger-text">
-          <span className="model-trigger-name">{ready ? preset.name : '选择模型'}</span>
+          <span className="model-trigger-name">
+            {ready ? preset.name : '选择模型'}
+            {verified && <CheckCircle2 size={11} strokeWidth={2.4} className="model-verified" />}
+          </span>
           <span className="model-trigger-sub">{ready ? config.model : '未配置'}</span>
         </span>
         <ChevronDown size={13} strokeWidth={2} className={open ? 'is-flip' : ''} />
@@ -63,6 +67,7 @@ export function ModelPicker({ settings, onPick, onConfigure, disabled }: Props) 
           <p className="model-menu-label">模型</p>
           {MAIN_PROVIDERS.map((p) => {
             const ok = isConfigured(settings, p.id);
+            const live = ok && isVerified(settings, p.id);
             const c = configOf(settings, p.id);
             const active = settings.activeId === p.id;
             return (
@@ -76,11 +81,16 @@ export function ModelPicker({ settings, onPick, onConfigure, disabled }: Props) 
               >
                 <span className="model-item-text">
                   <span className="model-item-name">{p.name}</span>
-                  <span className="model-item-sub">{ok ? c.model : '未配置 Key'}</span>
+                  <span className="model-item-sub">
+                    {ok ? c.model : '未配置 Key'}
+                    {ok && !live ? ' · 待验证' : ''}
+                  </span>
                 </span>
                 {ok ? (
                   active ? (
                     <Check size={14} strokeWidth={2.4} className="model-item-check" />
+                  ) : live ? (
+                    <CheckCircle2 size={13} strokeWidth={2} className="model-item-live" />
                   ) : null
                 ) : (
                   <span className="model-item-add">配置</span>

@@ -1,6 +1,5 @@
 import { ArrowRight, FileText, Link2, Loader2 } from 'lucide-react';
 import { ModelPicker } from './ModelPicker';
-import { presetOf } from '../lib/settings';
 import type { ProviderId, Settings } from '../lib/types';
 import { countChars } from '../lib/utils';
 
@@ -40,7 +39,6 @@ export function Composer({
   onConfigureProvider,
 }: Props) {
   const chars = countChars(value);
-  const preset = presetOf(settings.activeId);
   const canRun = chars >= 20 && !busy;
 
   const submit = () => {
@@ -121,19 +119,6 @@ export function Composer({
               </button>
             ))}
           </div>
-
-          <button
-            type="button"
-            className={`toggle ${settings.search && preset.supportsSearch ? 'is-on' : ''} ${preset.supportsSearch ? '' : 'is-off'}`}
-            onClick={() => preset.supportsSearch && onSettingsChange({ search: !settings.search })}
-            aria-pressed={settings.search && preset.supportsSearch}
-            title={preset.supportsSearch ? '开启后模型会检索公开来源' : `${preset.name} 没有内置联网，报告仅依据模型知识核对`}
-          >
-            <span className="toggle-track">
-              <span className="toggle-thumb" />
-            </span>
-            联网检索
-          </button>
         </div>
 
         <div className="composer-submit">

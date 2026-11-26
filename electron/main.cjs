@@ -24,17 +24,23 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
-/** 渲染进程里没有跨域限制，模型请求统一从主进程发出 */
+/** 渲染进程里没有跨域限制，模型请求与检索请求统一从主进程发出 */
 ipcMain.handle('veritas:http', async (_event, req) => {
   const controller = new AbortController();
   const timeout = Number(req?.timeoutMs) || 240000;
   const timer = setTimeout(() => controller.abort(), timeout);
+  const method = req?.method || 'POST';
 
   try {
     const res = await fetch(req.url, {
-      method: req.method || 'POST',
-      headers: req.headers || {},
-      body: req.body,
+      method,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        ...(req.headers || {}),
+      },
+      body: method === 'GET' || method === 'HEAD' ? undefined : req.body,
       signal: controller.signal,
       redirect: 'follow',
     });
@@ -78,12 +84,43 @@ async function createWindow() {
 
   if (process.env.VERITAS_SMOKE) {
     const result = await win.webContents.executeJavaScript(`
-      window.veritasNative.httpPost({
-        url: 'https://api.deepseek.com/v1/chat/completions',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer sk-smoke-test' },
-        body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: 'ping' }] }),
-        timeoutMs: 20000,
-      }).then((r) => ({ status: r.status, head: String(r.text || r.error).slice(0, 120), runtime: Boolean(window.veritasNative) }))
+      (async () => {
+        const post = await window.veritasNative.httpPost({
+          url: 'https://api.deepseek.com/v1/chat/completions',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer sk-smoke-test' },
+          body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: 'ping' }] }),
+          timeoutMs: 20000,
+        });
+        const search = await window.veritasNative.httpGet({
+          url: 'https://html.duckduckgo.com/html/?q=WHO+pandemic+2023',
+          headers: {},
+          timeoutMs: 20000,
+        });
+        const page = await window.veritasNative.httpGet({
+          url: 'https://r.jina.ai/https://en.wikipedia.org/wiki/Pandemic',
+          headers: {},
+          timeoutMs: 30000,
+        });
+        const zh = await window.veritasNative.httpGet({
+          url: 'https://www.so.com/s?q=' + encodeURIComponent('世界卫生组织 新冠 突发公共卫生事件'),
+          headers: {},
+          timeoutMs: 20000,
+        });
+        const zhDoc = new DOMParser().parseFromString(String(zh.text || ''), 'text/html');
+        const first = zhDoc.querySelector('li.res-list h3 a');
+        return {
+          postStatus: post.status,
+          postHead: String(post.text || post.error).slice(0, 90),
+          ddgStatus: search.status,
+          ddgHasResults: String(search.text || '').includes('result__a'),
+          jinaStatus: page.status,
+          jinaChars: String(page.text || '').length,
+          zhStatus: zh.status,
+          zhResults: zhDoc.querySelectorAll('li.res-list').length,
+          zhFirstUrl: first ? first.getAttribute('data-mdurl') : null,
+          runtime: Boolean(window.veritasNative),
+        };
+      })()
     `);
     console.log('SMOKE', JSON.stringify(result));
     app.quit();

@@ -6,8 +6,10 @@
  * 所以这里按运行环境挑一条通道：
  *
  *   Electron  → 主进程 ipcMain（Node 里发请求）
- *   Capacitor → CapacitorHttp 原生插件
+ *   安卓壳    → @JavascriptInterface 注入的 veritasAndroid 桥
  *   浏览器    → fetch
+ *
+ * 检索（搜索页、正文页）走 GET，模型请求走 POST，两条都从这里出去。
  */
 
 export interface HttpResult {
@@ -15,13 +17,22 @@ export interface HttpResult {
   text: string;
 }
 
+interface PostReq {
+  url: string;
+  headers: Record<string, string>;
+  body: string;
+  timeoutMs: number;
+}
+
+interface GetReq {
+  url: string;
+  headers: Record<string, string>;
+  timeoutMs: number;
+}
+
 interface NativeBridge {
-  httpPost(req: {
-    url: string;
-    headers: Record<string, string>;
-    body: string;
-    timeoutMs: number;
-  }): Promise<HttpResult>;
+  httpPost(req: PostReq): Promise<HttpResult>;
+  httpGet(req: GetReq): Promise<HttpResult>;
 }
 
 type Runtime = 'desktop' | 'android' | 'web';
@@ -51,7 +62,7 @@ export function runtimeLabel(): string {
 }
 
 /**
- * 安卓壳通过 addJavascriptInterface 注入 veritasAndroid.post，
+ * 安卓壳通过 addJavascriptInterface 注入 veritasAndroid.post / .get，
  * 回调走 window.__veritasNativeResolve(id, status, text)。
  */
 function androidBridge(): NativeBridge | null {
@@ -59,26 +70,35 @@ function androidBridge(): NativeBridge | null {
   const api = w.veritasAndroid;
   if (!api?.post) return null;
 
-  return {
-    httpPost: (req) =>
-      new Promise<HttpResult>((resolve, reject) => {
-        w.__veritasCallbacks = w.__veritasCallbacks || {};
-        const id = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-        w.__veritasCallbacks[id] = (status: number, text: string) => {
-          delete w.__veritasCallbacks[id];
-          if (!status) reject(new Error(text || '原生请求失败'));
-          else resolve({ status, text });
-        };
-        const headerLines = Object.entries(req.headers)
-          .map(([k, v]) => `${k}: ${v}`)
-          .join('\n');
-        try {
-          api.post(id, req.url, headerLines, req.body, req.timeoutMs);
-        } catch (err) {
-          delete w.__veritasCallbacks[id];
-          reject(err as Error);
+  const call = (fn: 'post' | 'get', req: PostReq | GetReq) =>
+    new Promise<HttpResult>((resolve, reject) => {
+      w.__veritasCallbacks = w.__veritasCallbacks || {};
+      const id = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+      w.__veritasCallbacks[id] = (status: number, text: string) => {
+        delete w.__veritasCallbacks[id];
+        if (!status) reject(new Error(text || '原生请求失败'));
+        else resolve({ status, text });
+      };
+      const headerLines = Object.entries(req.headers)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n');
+      try {
+        if (fn === 'post') {
+          api.post(id, req.url, headerLines, (req as PostReq).body, req.timeoutMs);
+        } else if (typeof api.get === 'function') {
+          api.get(id, req.url, headerLines, req.timeoutMs);
+        } else {
+          throw new Error('当前安装包版本过旧，不支持检索请求，请更新 APK');
         }
-      }),
+      } catch (err) {
+        delete w.__veritasCallbacks[id];
+        reject(err as Error);
+      }
+    });
+
+  return {
+    httpPost: (req) => call('post', req),
+    httpGet: (req) => call('get', req),
   };
 }
 
@@ -96,12 +116,16 @@ if (typeof window !== 'undefined') {
 function nativeBridge(): NativeBridge | null {
   const w = window as any;
   if (w.veritasNative?.httpPost) {
+    const unwrap = (res: any): HttpResult => {
+      if (res && !res.status && res.error) throw new Error(String(res.error));
+      return { status: Number(res?.status ?? 0), text: String(res?.text ?? '') };
+    };
     return {
-      httpPost: async (req) => {
-        const res = await w.veritasNative.httpPost(req);
-        if (res && !res.status && res.error) throw new Error(String(res.error));
-        return { status: Number(res?.status ?? 0), text: String(res?.text ?? '') };
-      },
+      httpPost: async (req) => unwrap(await w.veritasNative.httpPost(req)),
+      httpGet: async (req) =>
+        unwrap(await (typeof w.veritasNative.httpGet === 'function'
+          ? w.veritasNative.httpGet(req)
+          : w.veritasNative.httpPost({ ...req, body: '', method: 'GET' }))),
     };
   }
 
@@ -110,31 +134,35 @@ function nativeBridge(): NativeBridge | null {
 
   const http = resolveCapacitorHttp();
   if (http?.request) {
-    return {
-      httpPost: async ({ url, headers, body, timeoutMs }) => {
-        let data: unknown = body;
+    const send = async (method: 'GET' | 'POST', req: PostReq | GetReq): Promise<HttpResult> => {
+      let data: unknown;
+      if (method === 'POST') {
         try {
-          data = JSON.parse(body);
+          data = JSON.parse((req as PostReq).body);
         } catch {
-          /* 非 JSON 就原样发字符串 */
+          data = (req as PostReq).body;
         }
-        const res = await http.request({
-          url,
-          method: 'POST',
-          headers,
-          data,
-          responseType: 'text',
-          connectTimeout: 30_000,
-          readTimeout: timeoutMs,
-        });
-        const text =
-          typeof res.data === 'string'
-            ? res.data
-            : res.data == null
-              ? ''
-              : JSON.stringify(res.data);
-        return { status: Number(res.status ?? 0), text };
-      },
+      }
+      const res = await http.request({
+        url: req.url,
+        method,
+        headers: req.headers,
+        data,
+        responseType: 'text',
+        connectTimeout: 30_000,
+        readTimeout: req.timeoutMs,
+      });
+      const text =
+        typeof res.data === 'string'
+          ? res.data
+          : res.data == null
+            ? ''
+            : JSON.stringify(res.data);
+      return { status: Number(res.status ?? 0), text };
+    };
+    return {
+      httpPost: (req) => send('POST', req),
+      httpGet: (req) => send('GET', req),
     };
   }
 
@@ -159,6 +187,35 @@ export async function postJson(
   opts.signal?.addEventListener('abort', onAbort);
   try {
     const res = await fetch(url, { method: 'POST', headers, body, signal: ctrl.signal });
+    return { status: res.status, text: await res.text() };
+  } finally {
+    clearTimeout(timer);
+    opts.signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+/** 读取一个页面 / 接口（检索、正文抓取都走这里） */
+export async function getText(
+  url: string,
+  opts: { timeoutMs?: number; signal?: AbortSignal; headers?: Record<string, string> } = {},
+): Promise<HttpResult> {
+  const timeoutMs = opts.timeoutMs ?? 15_000;
+  const headers = opts.headers ?? {};
+  const bridge = nativeBridge();
+
+  if (bridge) {
+    if (opts.signal?.aborted) throw new DOMException('已取消', 'AbortError');
+    const result = await bridge.httpGet({ url, headers, timeoutMs });
+    if (!result.status) throw new Error('原生请求没有返回状态');
+    return result;
+  }
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const onAbort = () => ctrl.abort();
+  opts.signal?.addEventListener('abort', onAbort);
+  try {
+    const res = await fetch(url, { method: 'GET', headers, signal: ctrl.signal });
     return { status: res.status, text: await res.text() };
   } finally {
     clearTimeout(timer);

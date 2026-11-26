@@ -1,16 +1,19 @@
-import { Github, Settings2 } from 'lucide-react';
-import { configOf, isConfigured, presetOf } from '../lib/settings';
+import { Github, History, Settings2 } from 'lucide-react';
+import { configOf, isConfigured, isVerified, presetOf } from '../lib/settings';
 import type { Settings } from '../lib/types';
 
 interface Props {
   settings: Settings;
   onOpenSettings: () => void;
+  onOpenHistory: () => void;
+  historyCount: number;
 }
 
-export function TopBar({ settings, onOpenSettings }: Props) {
+export function TopBar({ settings, onOpenSettings, onOpenHistory, historyCount }: Props) {
   const preset = presetOf(settings.activeId);
   const config = configOf(settings);
   const ready = isConfigured(settings);
+  const verified = isVerified(settings);
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -28,12 +31,19 @@ export function TopBar({ settings, onOpenSettings }: Props) {
         </a>
 
         <div className="topbar-right">
+          <button className="history-btn" onClick={onOpenHistory} type="button" title="查看核查历史">
+            <History size={14} strokeWidth={1.9} />
+            <span>历史</span>
+            {historyCount > 0 && <span className="history-count">{historyCount > 99 ? '99+' : historyCount}</span>}
+          </button>
+
           <button className="model-chip" onClick={onOpenSettings} type="button">
-            <span className={`dot ${ready ? 'dot--on' : 'dot--off'}`} />
+            <span className={`dot ${verified ? 'dot--on' : ready ? 'dot--warn' : 'dot--off'}`} />
             <span className="model-chip-name">{preset.name}</span>
             <span className="model-chip-model">{ready ? config.model : '未配置模型'}</span>
             <Settings2 size={13} strokeWidth={1.8} />
           </button>
+
           <a
             className="icon-btn"
             href="https://github.com/kkai726/veritas"

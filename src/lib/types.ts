@@ -7,12 +7,19 @@ export interface ProviderConfig {
   baseUrl: string;
 }
 
+/** 连接测试通过后记下时间与模型，之后的核查不再重复验证 */
+export interface VerifiedMark {
+  model: string;
+  at: string;
+}
+
 export interface Settings {
   /** 已配置过的服务商；未出现即未配置 */
   configs: Partial<Record<ProviderId, ProviderConfig>>;
+  /** 已测通的服务商 */
+  verified: Partial<Record<ProviderId, VerifiedMark>>;
   /** 当前选中的服务商 */
   activeId: ProviderId;
-  search: boolean;
   depth: 'quick' | 'standard' | 'deep';
 }
 
@@ -43,10 +50,18 @@ export interface Paragraph {
   sourceIds: number[];
 }
 
+export interface EvidenceStat {
+  queries: number;
+  hits: number;
+  pages: number;
+  engines: string[];
+}
+
 export interface ReportMeta {
   provider: ProviderId;
   providerName: string;
   model: string;
+  /** 本次是否为模型自带联网（仅 OpenAI 回退时出现） */
   searchUsed: boolean;
   inputType: 'text' | 'url';
   sourceUrl?: string;
@@ -54,6 +69,7 @@ export interface ReportMeta {
   createdAt: string;
   wordCount: number;
   chars: number;
+  evidence?: EvidenceStat;
 }
 
 export interface Report {

@@ -54,6 +54,14 @@ function urlList(value: unknown): string[] {
     .filter((u) => /^https?:\/\//i.test(u));
 }
 
+export interface EvidenceRef {
+  sid: string;
+  title: string;
+  url: string;
+  publisher: string;
+  snippet: string;
+}
+
 export interface BuildInput {
   json: any;
   raw: string;
@@ -67,6 +75,37 @@ export interface BuildInput {
   sourceTitle?: string;
   text: string;
   elapsedMs: number;
+  evidence?: EvidenceRef[];
+  evidenceStat?: { queries: number; hits: number; pages: number; engines: string[] };
+}
+
+/** 主张与证据的兜底匹配：模型没挂来源时，用词面重叠补上最相关的一两条 */
+function matchEvidence(claimText: string, evidence: EvidenceRef[], limit = 2): string[] {
+  if (!evidence.length) return [];
+  const bag = (text: string) => {
+    const set = new Set<string>();
+    (text.match(/[A-Za-z0-9][A-Za-z0-9.+%-]{2,}/g) ?? []).forEach((w) => set.add(w.toLowerCase()));
+    for (const chunk of text.match(/[\u4e00-\u9fff]{2,}/g) ?? []) {
+      for (let i = 0; i < chunk.length - 1; i += 1) set.add(chunk.slice(i, i + 2));
+    }
+    return set;
+  };
+
+  const want = bag(claimText);
+  if (!want.size) return [];
+
+  const scored = evidence
+    .map((e) => {
+      const own = bag(`${e.title} ${e.snippet}`);
+      let hits = 0;
+      for (const t of want) if (own.has(t)) hits += 1;
+      return { url: e.url, score: hits / Math.sqrt(own.size || 1) };
+    })
+    .filter((s) => s.score > 0.12)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  return scored.map((s) => s.url);
 }
 
 export function buildReport(input: BuildInput): Report {
@@ -157,13 +196,19 @@ export function buildReport(input: BuildInput): Report {
     }
   }
   for (const c of input.citations) add(c.url, c.title, c.publisher);
+  for (const e of input.evidence ?? []) add(e.url, e.title, e.publisher);
 
   for (const p of paragraphs) {
     for (const claim of p.claims) {
       const withRaw = claim as Claim & { rawSources?: string[] };
-      const mapped = (withRaw.rawSources ?? [])
+      let mapped = (withRaw.rawSources ?? [])
         .map((u) => add(u))
         .filter((id): id is number => id !== null);
+      if (!mapped.length && input.evidence?.length) {
+        mapped = matchEvidence(claim.text, input.evidence)
+          .map((u) => add(u))
+          .filter((id): id is number => id !== null);
+      }
       claim.sourceIds = Array.from(new Set(mapped));
       delete withRaw.rawSources;
       p.sourceIds.push(...claim.sourceIds);
@@ -211,8 +256,8 @@ export function buildReport(input: BuildInput): Report {
     .map((x: unknown) => str(x, 300))
     .filter(Boolean)
     .slice(0, 6);
-  if (!input.searchUsed) {
-    limitations.unshift('本次核查未接入联网检索，判断仅基于模型已有知识，时效性与细节可能有偏差。');
+  if (!input.searchUsed && !input.evidence?.length && !input.evidenceStat?.hits) {
+    limitations.unshift('本次没有取到可引用的公开来源，判断仅基于模型已有知识，时效性与细节可能有偏差。');
   }
   if (!sources.length) {
     limitations.push('未获得可引用的公开来源，建议人工补充一手资料核对。');
@@ -244,6 +289,7 @@ export function buildReport(input: BuildInput): Report {
       createdAt: new Date().toISOString(),
       wordCount: allClaims.length,
       chars: countChars(input.text),
+      evidence: input.evidenceStat,
     },
     markdown: '',
     raw: input.raw,
