@@ -64,6 +64,22 @@ export function dedupeKey(url: string): string {
   }
 }
 
+/**
+ * 清掉从剪贴板带进来的不可见字符（零宽空格、BOM、不间断空格、换行）。
+ * 这些字符会让 fetch 在设置请求头时直接抛 TypeError，看起来像「网络失败」。
+ */
+export function sanitizeSecret(raw: string): string {
+  return (raw || '')
+    .replace(/[\u200b-\u200f\u2028-\u202f\u2060\ufeff\u00a0]/g, '')
+    .replace(/[\r\n\t]/g, '')
+    .trim();
+}
+
+/** 判断字符串是否能安全放进 HTTP 头（ISO-8859-1） */
+export function isHeaderSafe(value: string): boolean {
+  return !/[^\x20-\x7e]/.test(value);
+}
+
 export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }

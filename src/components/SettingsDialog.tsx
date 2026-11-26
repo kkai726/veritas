@@ -4,6 +4,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  Info,
   Loader2,
   Lock,
   PlugZap,
@@ -154,20 +155,40 @@ export function SettingsDialog({ settings, onSave, onClose }: Props) {
             </div>
           </div>
 
-          {draft.provider === 'custom' && (
-            <div className="field">
-              <label className="field-label" htmlFor="baseurl">
-                Base URL
-              </label>
-              <input
-                id="baseurl"
-                className="input"
-                value={draft.baseUrl}
-                placeholder="https://your-gateway.com/v1"
-                spellCheck={false}
-                onChange={(e) => patch({ baseUrl: e.target.value })}
-              />
-              <p className="field-hint">需兼容 OpenAI 的 /chat/completions 接口。</p>
+          <div className="field">
+            <label className="field-label" htmlFor="baseurl">
+              接口地址
+              <span className="field-optional">可选</span>
+            </label>
+            <input
+              id="baseurl"
+              className="input"
+              value={draft.baseUrl}
+              placeholder={preset.baseUrl || 'https://your-gateway.com/v1'}
+              spellCheck={false}
+              onChange={(e) => patch({ baseUrl: e.target.value })}
+            />
+            <p className="field-hint">
+              留空即直连
+              {preset.baseUrl ? ` ${preset.baseUrl}` : '服务商地址'}
+              。若请求被浏览器拦下、或域名在你的网络里不可达，就填自建转发网关。自定义服务商需兼容 OpenAI 的 /chat/completions。
+            </p>
+          </div>
+
+          {draft.provider === 'openai' && !draft.baseUrl.trim() && (
+            <div className="notice">
+              <Info size={15} strokeWidth={1.9} />
+              <div className="notice-body">
+                <strong>OpenAI 官方接口不接受浏览器直连</strong>
+                <span>
+                  它的响应里不带 CORS 允许头，页面只会拿到一个 Failed to fetch。两条稳妥路径：换上方的 OpenRouter，模型填
+                  openai/gpt-4.1；或按仓库里
+                  <a href="https://github.com/kkai726/veritas/tree/main/worker" target="_blank" rel="noreferrer noopener">
+                    worker/ 模板
+                  </a>
+                  部署自己的转发网关，再填进「接口地址」。
+                </span>
+              </div>
             </div>
           )}
 
@@ -203,7 +224,7 @@ export function SettingsDialog({ settings, onSave, onClose }: Props) {
 
           <p className="privacy">
             <Lock size={12} strokeWidth={2} />
-            Key 仅保存在本机浏览器的 localStorage，请求由浏览器直接发往服务商，不经过任何中间服务器。
+            Key 仅保存在本机浏览器的 localStorage，请求由浏览器发往服务商或你填写的网关，不经过我们的任何服务器。
           </p>
         </div>
 

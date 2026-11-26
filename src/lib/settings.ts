@@ -136,8 +136,16 @@ export function saveSettings(settings: Settings) {
 }
 
 export function resolveBaseUrl(settings: Settings): string {
-  if (settings.provider === 'custom') return settings.baseUrl.replace(/\/+$/, '');
+  const override = (settings.baseUrl || '').trim().replace(/\/+$/, '');
+  if (override) return override;
+  if (settings.provider === 'custom') return '';
   return presetOf(settings.provider).baseUrl.replace(/\/+$/, '');
+}
+
+/** 是否把请求发往官方域名（用于区分「服务商不接受浏览器直连」的提示） */
+export function isOfficialEndpoint(provider: ProviderId, base: string): boolean {
+  if (provider === 'custom') return false;
+  return base.replace(/\/+$/, '') === presetOf(provider).baseUrl.replace(/\/+$/, '');
 }
 
 export function isConfigured(settings: Settings): boolean {

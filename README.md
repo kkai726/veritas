@@ -77,6 +77,42 @@ npm run preview
 
 > 所有请求由浏览器直接发往服务商。若某家服务商不允许浏览器跨域调用，可改用 OpenRouter，或把请求指向你自己的网关（「自定义」服务商）。
 
+## 为什么 OpenAI 会报 `Failed to fetch`
+
+选了 OpenAI 官方接口、点「开始核查」后只有一个 `网络请求失败：Failed to fetch`，那多半不是 Key 的问题：
+
+```bash
+$ curl -sD - -o /dev/null -X POST https://api.openai.com/v1/responses \
+    -H 'Origin: https://kkai726.github.io' -H 'Authorization: Bearer sk-test' \
+    -H 'Content-Type: application/json' -d '{"model":"gpt-4.1","input":"hi"}'
+
+HTTP/2 401
+access-control-expose-headers: CF-Ray
+# ← 没有 access-control-allow-origin
+```
+
+浏览器只有在响应带 `Access-Control-Allow-Origin` 时，才允许页面读取响应体。OpenAI 的 POST 响应只给了 `Expose-Headers`，没给 `Allow-Origin`，请求在浏览器网络层就被丢弃，JS 侧只拿到一个 `TypeError`。同一条请求用 curl 或后端发都成功——所以表现为「Key 明明有效，页面永远失败」。
+
+三条出路，按省事程度排：
+
+| 方案 | 做法 | 代价 |
+| :--- | :--- | :--- |
+| 换 OpenRouter | 设置里选 OpenRouter，模型填 `openai/gpt-4.1`（开启联网自动补 `:online`） | 需要 OpenRouter 的 Key，按量计费 |
+| 自建转发网关 | 部署仓库里的 [`worker/`](./worker)，把地址填进「模型设置 → 接口地址」 | 需 Cloudflare 账号，免费额度够用；Key 只经过你自己的 Worker |
+| 换服务商 | Gemini / Perplexity / DeepSeek 的响应都带 CORS 头，可直连 | 换个模型 |
+
+实测（真实浏览器环境，401 说明请求确实到达了服务商）：
+
+| 服务商 | 浏览器直连 | 现象 |
+| :--- | :--- | :--- |
+| OpenAI | ✗ | POST 响应缺 `Access-Control-Allow-Origin` |
+| Google Gemini | ✓ | 正常返回，支持搜索接地 |
+| Perplexity | ✓ | 正常返回结构化引用 |
+| OpenRouter | ✓ | 正常返回，`:online` 可联网 |
+| DeepSeek | ✓ | 正常返回 |
+
+「接口地址」对任意服务商都生效，留空即直连官方域名。
+
 ## 工作原理
 
 ```
@@ -138,6 +174,8 @@ npm run preview
 | Vercel / Netlify | 直接导入仓库，构建命令 `npm run build`，输出目录 `dist` |
 | 任意对象存储 / Nginx | 上传 `dist/` 目录 |
 
+若要在浏览器里直连 OpenAI，额外部署 `worker/` 里的转发网关（`npx wrangler deploy`），把生成的地址填进设置里的「接口地址」。
+
 ## 目录结构
 
 ```
@@ -158,6 +196,9 @@ src/
 │  ├─ extract.ts           链接正文抽取
 │  └─ parse.ts             JSON 容错解析
 └─ styles/global.css       设计系统（色板、字体、组件样式）
+
+worker/
+└─ index.js                Cloudflare Worker 转发网关（补 CORS 头）
 ```
 
 ## 已知限制

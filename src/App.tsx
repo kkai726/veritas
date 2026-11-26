@@ -32,7 +32,7 @@ export default function App() {
   const [phase, setPhase] = useState<'idle' | 'running' | 'done'>('idle');
   const [stage, setStage] = useState<Stage>('analyze');
   const [report, setReport] = useState<Report | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isDemo, setIsDemo] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -82,7 +82,11 @@ export default function App() {
         setPhase('idle');
         return;
       }
-      setError(err instanceof Error ? err.message : String(err));
+      const detail = err as { message?: string; hint?: string };
+      setError({
+        message: detail?.message || String(err),
+        hint: detail?.hint,
+      });
       setPhase('idle');
     } finally {
       abortRef.current = null;
@@ -157,10 +161,18 @@ export default function App() {
             {error && (
               <div className="banner banner--error" role="alert">
                 <AlertCircle size={15} />
-                <span>{error}</span>
-                <button type="button" className="banner-close" onClick={() => setError(null)} aria-label="关闭">
-                  <X size={13} />
-                </button>
+                <div className="banner-body">
+                  <span className="banner-msg">{error.message}</span>
+                  {error.hint && <span className="banner-hint">{error.hint}</span>}
+                </div>
+                <div className="banner-side">
+                  <button type="button" className="banner-action" onClick={() => setSettingsOpen(true)}>
+                    模型设置
+                  </button>
+                  <button type="button" className="banner-close" onClick={() => setError(null)} aria-label="关闭">
+                    <X size={13} />
+                  </button>
+                </div>
               </div>
             )}
 
