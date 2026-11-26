@@ -40,7 +40,7 @@ Veritas 不下一句话结论，它把一段话拆开看：
 | Windows 10/11 x64 | [`Veritas-Setup-1.0.0-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.0.0/Veritas-Setup-1.0.0-x64.exe) | 116 MB | NSIS 安装版，可选安装目录、生成桌面快捷方式 |
 | Windows 10/11 x64 | [`Veritas-Portable-1.0.0-x64.exe`](https://github.com/kkai726/veritas/releases/download/v1.0.0/Veritas-Portable-1.0.0-x64.exe) | 106 MB | 免安装单文件，双击即用，放进 U 盘也能跑 |
 | Android 7.0+ (arm64) | [`Veritas-1.0.0-android.apk`](https://github.com/kkai726/veritas/releases/download/v1.0.0/Veritas-1.0.0-android.apk) | 190 KB | `minSdk 24` / `targetSdk 35`，原生 WebView 壳，不依赖 Capacitor |
-| 任意 Linux / NAS | `ghcr.io/kkai726/veritas:latest` | ~25 MB | Nginx 托管静态站，自托管网页版（见 [自托管](#自托管镜像)） |
+| 任意 Linux / NAS | [`ghcr.io/kkai726/veritas:latest`](https://github.com/kkai726/veritas/pkgs/container/veritas) | 20 MB | Nginx 托管静态站，自托管网页版（见 [自托管](#自托管镜像)） |
 
 安装前的两件事，都是系统层面的，不是程序问题：
 

@@ -689,6 +689,16 @@
         font-size: 11.5px;
       }
 
+      @media (max-width: 640px) {
+        .tablewrap {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+        .tablewrap table {
+          min-width: 560px;
+        }
+      }
+
       @media (max-width: 900px) {
         .steps,
         .dl {
