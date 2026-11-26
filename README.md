@@ -6,6 +6,8 @@
 
 纯前端 · 自带模型 Key · 不经过任何中间服务器 · 输出整洁 Markdown
 
+[在线体验](https://kkai726.github.io/veritas/) · [示例报告](https://kkai726.github.io/veritas/?demo=1) · [源码](https://github.com/kkai726/veritas)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-1c4739.svg)](./LICENSE)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff.svg)](https://vite.dev)
 [![React](https://img.shields.io/badge/React-19-149eca.svg)](https://react.dev)
@@ -132,7 +134,7 @@ npm run preview
 
 | 平台 | 做法 |
 | :--- | :--- |
-| GitHub Pages | 仓库已内置 `.github/workflows/deploy.yml`，推送到 `main` 后在 Settings → Pages 选择 GitHub Actions |
+| GitHub Pages | 已启用：推送到 `main` 由 `.github/workflows/deploy.yml` 自动构建发布 |
 | Vercel / Netlify | 直接导入仓库，构建命令 `npm run build`，输出目录 `dist` |
 | 任意对象存储 / Nginx | 上传 `dist/` 目录 |
 
