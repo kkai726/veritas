@@ -70,7 +70,15 @@ Veritas 不下一句话结论，它把一段话拆开看：
 <div align="center">
 <img src="./docs/screenshot-models.png" alt="模型选择" width="880" />
 <br />
-<sub>模型下拉只列已经配好 Key 的服务商，其余收进「自定义」；配置与验证状态都缓存在本地。</sub>
+<sub>模型下拉只列已经配好 Key 的服务商，其余收进「自定义」；已配置未验证的会标「待验证」。</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="./docs/screenshot-history.png" alt="核查历史" width="880" />
+<br />
+<sub>历史：每条记录带评分、模型、字数与结论摘要，点开即回到那份报告，右侧可逐条删除。</sub>
 </div>
 
 ## 支持的模型
