@@ -10,7 +10,9 @@ import {
   Download,
   ExternalLink,
   HelpCircle,
+  RefreshCw,
   RotateCcw,
+  Timer,
   XCircle,
 } from 'lucide-react';
 import type { Claim, ClaimVerdict, Paragraph, Report, Source } from '../lib/types';
@@ -21,6 +23,7 @@ import { ScoreRing } from './ScoreRing';
 interface Props {
   report: Report;
   onReset: () => void;
+  onRerun?: () => void;
   demo?: boolean;
   initialView?: 'report' | 'markdown';
 }
@@ -150,7 +153,7 @@ function MarkdownPanel({ report, onCopy, copied }: { report: Report; onCopy: () 
   );
 }
 
-export function ReportView({ report, onReset, demo = false, initialView = 'report' }: Props) {
+export function ReportView({ report, onReset, onRerun, demo = false, initialView = 'report' }: Props) {
   const [view, setView] = useState<'report' | 'markdown'>(initialView);
   const [copied, setCopied] = useState(false);
   const band = bandOf(report.overallScore);
@@ -203,6 +206,13 @@ export function ReportView({ report, onReset, demo = false, initialView = 'repor
             {formatTime(report.meta.createdAt)}
             {' · '}
             {formatElapsed(report.meta.elapsedMs)}
+            {report.meta.timings && (
+              <span className="meta-timings" title="分阶段耗时">
+                <Timer size={11} />
+                检索 {(report.meta.timings.researchMs / 1000).toFixed(1)}s · 模型{' '}
+                {(report.meta.timings.modelMs / 1000).toFixed(1)}s
+              </span>
+            )}
             {report.meta.sourceUrl && (
               <>
                 {' · '}
@@ -270,6 +280,12 @@ export function ReportView({ report, onReset, demo = false, initialView = 'repor
             <Download size={13} />
             下载 .md
           </button>
+          {onRerun && !demo && (
+            <button type="button" className="ghost-btn ghost-btn--sm" onClick={onRerun} title="用同样的内容再核查一次">
+              <RefreshCw size={13} />
+              重新核查
+            </button>
+          )}
           <button type="button" className="ghost-btn ghost-btn--sm" onClick={onReset}>
             <RotateCcw size={13} />
             新核查

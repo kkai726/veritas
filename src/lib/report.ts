@@ -77,6 +77,7 @@ export interface BuildInput {
   elapsedMs: number;
   evidence?: EvidenceRef[];
   evidenceStat?: { queries: number; hits: number; pages: number; engines: string[] };
+  timings?: { extractMs: number; researchMs: number; modelMs: number };
 }
 
 /** 主张与证据的兜底匹配：模型没挂来源时，用词面重叠补上最相关的一两条 */
@@ -286,6 +287,7 @@ export function buildReport(input: BuildInput): Report {
       inputType,
       sourceUrl,
       elapsedMs: input.elapsedMs,
+      timings: input.timings,
       createdAt: new Date().toISOString(),
       wordCount: allClaims.length,
       chars: countChars(input.text),

@@ -29,13 +29,8 @@ for f in "$BT/aapt2.exe" "$BT/zipalign.exe" "$BT/lib/d8.jar" "$BT/lib/apksigner.
   [ -e "$f" ] || { echo "缺少 $f，请先安装 Android build-tools 与 platform"; exit 1; }
 done
 
-rm -rf "$OUT"
+python -c "import shutil,sys; shutil.rmtree(sys.argv[1], ignore_errors=True)" "$OUT"
 mkdir -p "$OUT/res" "$OUT/gen" "$OUT/classes" "$OUT/dex"
-
-echo "· 拷贝前端产物到 assets"
-rm -rf "$APP/assets/public"
-mkdir -p "$APP/assets"
-cp -r ../dist "$APP/assets/public"
 
 echo "· 编译资源"
 "$BT/aapt2.exe" compile --dir "$APP/res" -o "$OUT/res/resources.zip"
@@ -47,12 +42,12 @@ echo "· 编译资源"
   --java "$OUT/gen" \
   --min-sdk-version 24 \
   --target-sdk-version 35 \
-  --version-code 2 \
-  --version-name "1.1" \
+  --version-code 3 \
+  --version-name "1.2" \
   --auto-add-overlay
 
 echo "· 写入前端资源"
-python zip-assets.py "$OUT/base.apk" "$APP/assets"
+python zip-assets.py "$OUT/base.apk" "../dist" "assets/public"
 
 echo "· 编译 Java"
 find "$APP/java" "$OUT/gen" -name "*.java" > "$OUT/sources.txt"

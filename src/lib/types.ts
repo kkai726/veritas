@@ -70,6 +70,8 @@ export interface ReportMeta {
   wordCount: number;
   chars: number;
   evidence?: EvidenceStat;
+  /** 分阶段耗时，报告页会显示检索 / 模型各花了多久 */
+  timings?: { extractMs: number; researchMs: number; modelMs: number };
 }
 
 export interface Report {

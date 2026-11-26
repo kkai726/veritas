@@ -2554,3 +2554,470 @@ textarea {
     width: min(272px, 82vw);
   }
 }
+
+/* ============================================================
+   Processing v1.2 — 暂停 / 进度 / 后台任务
+   ============================================================ */
+.proc-head-main {
+  min-width: 0;
+}
+
+.proc-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex: none;
+}
+
+.ghost-btn--danger:hover:not(:disabled) {
+  border-color: #e2c3bc;
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.proc-task-title {
+  margin-top: 16px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line-2);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.proc-progress {
+  position: relative;
+  margin-top: 18px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--muted-soft);
+  overflow: hidden;
+}
+
+.proc-bar {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #3c7a5f);
+  transition: width 0.35s ease;
+}
+
+.proc-progress.is-indeterminate .proc-bar {
+  width: 34%;
+  animation: proc-slide 1.5s ease-in-out infinite;
+}
+
+@keyframes proc-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(310%);
+  }
+}
+
+.proc-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.proc-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.step.is-paused .step-mark {
+  border-color: var(--line-2);
+  background: var(--muted-soft);
+  color: var(--ink-2);
+}
+
+.proc-error-body {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.proc-error-msg {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--bad);
+  background: var(--bad-soft);
+  border: 1px solid #edd6d0;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.proc-error-msg svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.proc-error-hint {
+  display: flex;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 11px 14px;
+}
+
+.proc-error-hint svg {
+  flex: none;
+  margin-top: 4px;
+  color: var(--warn);
+}
+
+.proc-error-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 18px 0 4px;
+}
+
+/* ============================================================
+   Task dock — 右下角后台任务
+   ============================================================ */
+.app--dock {
+  padding-bottom: 64px;
+}
+
+.dock-pill {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+  color: var(--ink-2);
+  animation: pop 0.2s ease both;
+}
+
+.dock-pill:hover {
+  border-color: var(--line-2);
+  color: var(--ink);
+}
+
+.dock-pill-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--muted-soft);
+  color: var(--ink-2);
+}
+
+.dock-pill-icon.is-live {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.dock-pill-text {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+}
+
+.dock {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 45;
+  width: 344px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: pop 0.2s ease both;
+}
+
+.dock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.dock-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.dock-badge {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  background: var(--muted-soft);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.dock-list {
+  max-height: min(52vh, 360px);
+  overflow-y: auto;
+}
+
+.dock-item {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 2px 6px 2px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.dock-item:last-child {
+  border-bottom: 0;
+}
+
+.dock-item.is-active {
+  background: var(--accent-soft);
+}
+
+.dock-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 8px 11px 14px;
+  text-align: left;
+}
+
+.dock-state {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin-top: 1px;
+  background: var(--muted-soft);
+  color: var(--ink-3);
+}
+
+.dock-state--running {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.dock-state--paused,
+.dock-state--pausing {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.dock-state--done {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.dock-state--error {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.dock-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dock-item-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dock-item-title {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock-item-meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.dock-mini-bar {
+  display: block;
+  margin-top: 4px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--muted-soft);
+  overflow: hidden;
+}
+
+.dock-mini-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.dock-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.dock-act {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+
+.dock-act:hover {
+  background: var(--muted-soft);
+  color: var(--ink);
+}
+
+.dock-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+.dock-foot .text-link {
+  font-family: var(--sans);
+  font-size: 11px;
+}
+
+/* ============================================================
+   杂项：历史筛选、耗时、kbd
+   ============================================================ */
+.hist-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 18px 12px;
+  padding: 0 10px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--ink-3);
+}
+
+.hist-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.hist-search-clear {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--ink-3);
+}
+
+.hist-search-clear:hover {
+  background: var(--muted-soft);
+  color: var(--ink);
+}
+
+.hist-empty--sm {
+  padding: 26px 20px;
+}
+
+.hist-empty--sm p {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.meta-timings {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+kbd {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+@media (max-width: 780px) {
+  .dock,
+  .dock-pill {
+    right: 12px;
+    bottom: 12px;
+  }
+
+  .dock {
+    width: calc(100vw - 24px);
+  }
+
+  .proc-head {
+    flex-direction: column;
+  }
+
+  .proc-actions {
+    justify-content: flex-start;
+  }
+}

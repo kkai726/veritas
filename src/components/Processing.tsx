@@ -1,71 +1,123 @@
 import { useEffect, useState } from 'react';
-import { Check, Loader2, X } from 'lucide-react';
-import type { Stage } from '../lib/pipeline';
+import { Check, Loader2, Pause, Play, X } from 'lucide-react';
+import { STAGE_TEXT, type Stage } from '../lib/pipeline';
+import { elapsedOf, type RunTask } from '../lib/task';
+import { formatElapsed } from '../lib/utils';
 
 interface Props {
-  stage: Stage;
-  isUrl: boolean;
+  task: RunTask;
+  onPause: () => void;
+  onResume: () => void;
   onCancel: () => void;
-  providerLabel: string;
-  model: string;
+  onCollapse: () => void;
 }
 
 const ORDER: Stage[] = ['verify', 'extract', 'research', 'analyze', 'compose'];
 
-const LABEL: Record<Stage, string> = {
-  verify: '验证模型可用',
-  extract: '读取链接正文',
-  research: '检索公开来源',
-  analyze: '逐段比对证据',
-  compose: '编排核查报告',
-};
-
-export function Processing({ stage, isUrl, onCancel, providerLabel, model }: Props) {
-  const [elapsed, setElapsed] = useState(0);
+export function Processing({ task, onPause, onResume, onCancel, onCollapse }: Props) {
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const start = Date.now();
-    const timer = setInterval(() => setElapsed(Date.now() - start), 100);
+    const timer = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(timer);
   }, []);
 
+  const isUrl = task.mode === 'url' || /^https?:\/\//i.test(task.input.trim());
   const stages = ORDER.filter((s) => (s === 'extract' ? isUrl : true));
-  const currentIndex = stages.indexOf(stage);
+  const currentIndex = Math.max(0, stages.indexOf(task.stage));
+  const elapsed = elapsedOf(task, now);
+
+  const paused = task.status === 'paused' || task.status === 'pausing';
+  const queued = task.status === 'queued';
+  const label =
+    task.status === 'pausing'
+      ? '正在暂停，等当前请求返回'
+      : task.status === 'paused'
+        ? '已暂停 · 不会再发出新请求'
+        : queued
+          ? '排队中'
+          : task.progress?.label || '处理中…';
+
+  const total = task.progress?.total;
+  const done = task.progress?.done;
+  const pct = total && done != null ? Math.min(100, Math.round((done / total) * 100)) : null;
 
   return (
     <section className="processing" aria-live="polite">
       <div className="proc-head">
-        <div>
-          <p className="eyebrow">Working</p>
-          <h2 className="proc-title">正在核查</h2>
+        <div className="proc-head-main">
+          <p className="eyebrow">{paused ? 'Paused' : queued ? 'Queued' : 'Working'}</p>
+          <h2 className="proc-title">{paused ? '核查已暂停' : queued ? '排队等待' : '正在核查'}</h2>
           <p className="proc-sub">
-            {providerLabel} · {model} · {(elapsed / 1000).toFixed(1)}s
+            {task.providerName} · {task.model} · {formatElapsed(elapsed)}
           </p>
         </div>
-        <button className="ghost-btn" onClick={onCancel} type="button">
-          <X size={14} />
-          取消
-        </button>
+        <div className="proc-actions">
+          {paused ? (
+            <button className="ghost-btn" onClick={onResume} type="button">
+              <Play size={13} />
+              继续
+            </button>
+          ) : (
+            <button className="ghost-btn" onClick={onPause} type="button" disabled={queued}>
+              <Pause size={13} />
+              暂停
+            </button>
+          )}
+          <button className="ghost-btn" onClick={onCollapse} type="button" title="收起后任务继续在后台运行">
+            收起
+          </button>
+          <button className="ghost-btn ghost-btn--danger" onClick={onCancel} type="button">
+            <X size={14} />
+            取消
+          </button>
+        </div>
       </div>
+
+      <p className="proc-task-title">{task.title}</p>
+
+      <div className={`proc-progress ${pct === null ? 'is-indeterminate' : ''}`}>
+        <span className="proc-bar" style={pct === null ? undefined : { width: `${Math.max(pct, 4)}%` }} />
+      </div>
+      <p className="proc-status">
+        {!paused && !queued && <Loader2 size={12} className="spin" />}
+        <span>{label}</span>
+        {task.progress?.done != null && task.progress?.total ? (
+          <span className="proc-count">
+            {task.progress.done}/{task.progress.total}
+          </span>
+        ) : null}
+      </p>
 
       <ol className="steps">
         {stages.map((s, i) => {
-          const done = i < currentIndex;
+          const doneStep = i < currentIndex;
           const active = i === currentIndex;
           return (
-            <li key={s} className={`step ${done ? 'is-done' : ''} ${active ? 'is-active' : ''}`}>
+            <li
+              key={s}
+              className={`step ${doneStep ? 'is-done' : ''} ${active ? 'is-active' : ''} ${
+                active && paused ? 'is-paused' : ''
+              }`}
+            >
               <span className="step-mark">
-                {done ? <Check size={12} strokeWidth={3} /> : active ? <Loader2 size={12} className="spin" /> : null}
+                {doneStep ? (
+                  <Check size={12} strokeWidth={3} />
+                ) : active && !paused ? (
+                  <Loader2 size={12} className="spin" />
+                ) : active && paused ? (
+                  <Pause size={10} />
+                ) : null}
               </span>
-              <span className="step-label">{LABEL[s]}</span>
-              {active && <span className="step-bar" />}
+              <span className="step-label">{STAGE_TEXT[s]}</span>
+              {active && !paused && <span className="step-bar" />}
             </li>
           );
         })}
       </ol>
 
       <p className="proc-note">
-        检索在应用内完成，抓到的证据只以摘要形式交给模型，比模型自己联网更省额度。通常需要 20–90 秒。
+        收起后任务继续在后台跑，右下角的任务卡可以随时打开；暂停期间不会发出任何请求，所以也不会产生费用。
       </p>
     </section>
   );

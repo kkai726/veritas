@@ -1,25 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowUpRight, FileCheck2, Fingerprint, ListChecks, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ArrowUpRight, FileCheck2, Fingerprint, ListChecks } from 'lucide-react';
 import { Composer } from './components/Composer';
 import { HistoryPanel } from './components/HistoryPanel';
 import { Processing } from './components/Processing';
 import { ReportView } from './components/ReportView';
 import { SettingsDialog } from './components/SettingsDialog';
+import { TaskDock } from './components/TaskDock';
+import { TaskError } from './components/TaskError';
 import { TopBar } from './components/TopBar';
-import { STAGE_TEXT, factCheck, type Stage } from './lib/pipeline';
 import { demoReport } from './lib/demo';
-import { runtimeLabel } from './lib/transport';
-import { historyCount, onHistoryChange, saveHistory, type HistoryEntry } from './lib/history';
-import { testConnection } from './lib/providers';
+import { historyCount, onHistoryChange, type HistoryEntry } from './lib/history';
 import {
-  configOf,
-  isConfigured,
-  isVerified,
-  loadSettings,
-  markVerified,
-  presetOf,
-  saveSettings,
-} from './lib/settings';
+  cancelTask,
+  clearFinishedTasks,
+  dismissTask,
+  onSettingsPatched,
+  pauseTask,
+  resumeTask,
+  startTask,
+  useTasks,
+} from './lib/task';
+import { configOf, isConfigured, isVerified, loadSettings, presetOf, saveSettings } from './lib/settings';
+import { runtimeLabel } from './lib/transport';
 import type { ProviderId, Report, Settings } from './lib/types';
 
 const EXAMPLES = [
@@ -37,28 +39,39 @@ const EXAMPLES = [
   },
 ];
 
+const DRAFT_KEY = 'veritas.draft.v1';
+
+type View =
+  | { kind: 'home' }
+  | { kind: 'task'; id: string }
+  | { kind: 'report'; report: Report; demo?: boolean; input?: string };
+
+function loadDraft(): { input: string; mode: 'text' | 'url' } {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return { input: '', mode: 'text' };
+    const parsed = JSON.parse(raw) as { input?: string; mode?: 'text' | 'url' };
+    return { input: parsed.input ?? '', mode: parsed.mode === 'url' ? 'url' : 'text' };
+  } catch {
+    return { input: '', mode: 'text' };
+  }
+}
+
 export default function App() {
+  const draft = useMemo(loadDraft, []);
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
-  const [mode, setMode] = useState<'text' | 'url'>('text');
-  const [input, setInput] = useState('');
-  const [phase, setPhase] = useState<'idle' | 'running' | 'done'>('idle');
-  const [stage, setStage] = useState<Stage>('analyze');
-  const [report, setReport] = useState<Report | null>(null);
-  const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
+  const [mode, setMode] = useState<'text' | 'url'>(draft.mode);
+  const [input, setInput] = useState(draft.input);
+  const [view, setView] = useState<View>({ kind: 'home' });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [histCount, setHistCount] = useState(() => historyCount());
   const [focusProvider, setFocusProvider] = useState<ProviderId | null>(null);
-  const [isDemo, setIsDemo] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const tasks = useTasks();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.has('demo')) {
-      setReport(demoReport());
-      setIsDemo(true);
-      setPhase('done');
-    }
+    if (params.has('demo')) setView({ kind: 'report', report: demoReport(), demo: true });
     if (params.get('panel') === 'settings') setSettingsOpen(true);
     if (params.get('panel') === 'history') setHistoryOpen(true);
   }, []);
@@ -67,100 +80,254 @@ export default function App() {
     saveSettings(settings);
   }, [settings]);
 
+  // 任务在后台验证通过后，把 verified 标记写回设置
+  useEffect(() => {
+    onSettingsPatched((next) => setSettings(next));
+    return () => onSettingsPatched(null);
+  }, []);
+
   useEffect(() => onHistoryChange(() => setHistCount(historyCount())), []);
 
-  const patchSettings = (patch: Partial<Settings>) => {
-    setSettings((prev) => ({ ...prev, ...patch }));
-  };
+  // 草稿留在本机，刷新页面不丢
+  useEffect(() => {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ input, mode }));
+    } catch {
+      /* 写不进就放弃 */
+    }
+  }, [input, mode]);
+
+  // 打开的任务被移除时回到首页
+  useEffect(() => {
+    if (view.kind === 'task' && !tasks.some((t) => t.id === view.id)) setView({ kind: 'home' });
+  }, [tasks, view]);
+
+  const patchSettings = (patch: Partial<Settings>) => setSettings((prev) => ({ ...prev, ...patch }));
 
   const openSettings = (id?: ProviderId) => {
     setFocusProvider(id ?? null);
     setSettingsOpen(true);
   };
 
-  const pickProvider = (id: ProviderId) => {
-    setSettings((prev) => ({ ...prev, activeId: id }));
-  };
+  const pickProvider = (id: ProviderId) => setSettings((prev) => ({ ...prev, activeId: id }));
 
-  const run = useCallback(async () => {
+  const run = useCallback(() => {
     if (!isConfigured(settings)) {
       openSettings(settings.activeId);
       return;
     }
-
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    setError(null);
-    setPhase('running');
-    setStage(isVerified(settings) ? (mode === 'url' ? 'extract' : 'research') : 'verify');
+    const id = startTask({ settings, input, mode });
+    setView({ kind: 'task', id });
     window.scrollTo({ top: 0, behavior: 'smooth' });
-
-    let active = settings;
-    try {
-      // 没测过的模型先验证一次，避免跑到一半才报「返回空结果」
-      if (!isVerified(active)) {
-        const config = configOf(active);
-        setStage('verify');
-        await testConnection(active.activeId, config);
-        active = markVerified(active, active.activeId, config.model);
-        setSettings(active);
-      }
-
-      const result = await factCheck({
-        settings: active,
-        input,
-        mode,
-        onStage: setStage,
-        signal: ctrl.signal,
-      });
-
-      setReport(result);
-      setPhase('done');
-      saveHistory(result);
-      setHistCount(historyCount());
-    } catch (err) {
-      if (ctrl.signal.aborted) {
-        setPhase('idle');
-        return;
-      }
-      const detail = err as { message?: string; hint?: string };
-      setError({
-        message: detail?.message || String(err),
-        hint: detail?.hint,
-      });
-      setPhase('idle');
-    } finally {
-      abortRef.current = null;
-    }
   }, [settings, input, mode]);
 
-  const cancel = () => abortRef.current?.abort();
+  const rerun = (text: string, nextMode: 'text' | 'url' | 'auto' = 'auto') => {
+    if (!text.trim()) return;
+    if (!isConfigured(settings)) {
+      openSettings(settings.activeId);
+      return;
+    }
+    setInput(text);
+    const resolved: 'text' | 'url' = nextMode === 'auto' ? (/^https?:\/\//i.test(text.trim()) ? 'url' : 'text') : nextMode;
+    setMode(resolved);
+    const id = startTask({ settings, input: text, mode: resolved });
+    setView({ kind: 'task', id });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-  const reset = () => {
-    setReport(null);
-    setError(null);
-    setIsDemo(false);
-    setPhase('idle');
+  const goHome = () => {
+    setView({ kind: 'home' });
     if (window.location.search) window.history.replaceState({}, '', window.location.pathname);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const openHistoryEntry = (entry: HistoryEntry) => {
-    setReport({ ...entry.report, raw: '' });
-    setIsDemo(false);
-    setError(null);
-    setPhase('done');
+    setView({ kind: 'report', report: { ...entry.report, raw: '' }, input: entry.input });
     setHistoryOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // 快捷键：Esc 收起当前视图，⌘/Ctrl+K 历史，⌘/Ctrl+, 设置
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setHistoryOpen(true);
+      } else if (meta && e.key === ',') {
+        e.preventDefault();
+        openSettings();
+      } else if (e.key === 'Escape' && !settingsOpen && !historyOpen && view.kind === 'task') {
+        goHome();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [settingsOpen, historyOpen, view]);
 
   const preset = presetOf(settings.activeId);
   const config = configOf(settings);
   const configured = isConfigured(settings);
   const verified = isVerified(settings);
 
+  const activeTask = view.kind === 'task' ? tasks.find((t) => t.id === view.id) : undefined;
+  const runningCount = tasks.filter((t) => t.status === 'running' || t.status === 'pausing').length;
+
+  let body: ReactNode;
+
+  if (view.kind === 'report') {
+    body = (
+      <ReportView
+        report={view.report}
+        demo={view.demo}
+        onReset={goHome}
+        onRerun={view.input ? () => rerun(view.input as string) : undefined}
+        initialView={new URLSearchParams(window.location.search).get('view') === 'markdown' ? 'markdown' : 'report'}
+      />
+    );
+  } else if (view.kind === 'task' && activeTask) {
+    if (activeTask.status === 'done' && activeTask.report) {
+      body = (
+        <ReportView
+          report={activeTask.report}
+          onReset={goHome}
+          onRerun={() => rerun(activeTask.input, activeTask.mode)}
+        />
+      );
+    } else if (activeTask.status === 'error') {
+      body = (
+        <TaskError
+          task={activeTask}
+          onRetry={() => rerun(activeTask.input, activeTask.mode)}
+          onBack={goHome}
+          onOpenSettings={() => openSettings(settings.activeId)}
+        />
+      );
+    } else if (activeTask.status === 'cancelled') {
+      body = (
+        <TaskError
+          task={activeTask}
+          cancelled
+          onRetry={() => rerun(activeTask.input, activeTask.mode)}
+          onBack={goHome}
+          onOpenSettings={() => openSettings(settings.activeId)}
+        />
+      );
+    } else {
+      body = (
+        <Processing
+          task={activeTask}
+          onPause={() => pauseTask(activeTask.id)}
+          onResume={() => resumeTask(activeTask.id)}
+          onCancel={() => cancelTask(activeTask.id)}
+          onCollapse={goHome}
+        />
+      );
+    }
+  } else {
+    body = (
+      <>
+        <section className="intro">
+          <p className="eyebrow">Evidence, not vibes</p>
+          <h1 className="display">
+            把每一句话，
+            <br />
+            <span className="display-em">查到底</span>。
+          </h1>
+          <p className="lede">
+            贴入一段文字，或者一个链接。Veritas 拆解段落、在应用内检索公开来源、逐条比对证据，
+            给出可信度评分、可追溯的引用，以及一份可直接引用的 Markdown 报告。
+          </p>
+
+          <ul className="pillars">
+            <li>
+              <ListChecks size={15} strokeWidth={1.8} />
+              逐段判定，而不是一句「真 / 假」
+            </li>
+            <li>
+              <Fingerprint size={15} strokeWidth={1.8} />
+              每条陈述都挂到具体来源
+            </li>
+            <li>
+              <FileCheck2 size={15} strokeWidth={1.8} />
+              结果可导出为整洁 Markdown
+            </li>
+          </ul>
+        </section>
+
+        <Composer
+          mode={mode}
+          onModeChange={setMode}
+          value={input}
+          onValueChange={setInput}
+          settings={settings}
+          onSettingsChange={patchSettings}
+          onRun={run}
+          busy={false}
+          configured={configured}
+          runningCount={runningCount}
+          onOpenSettings={() => openSettings()}
+          onPickProvider={pickProvider}
+          onConfigureProvider={(id) => openSettings(id)}
+        />
+
+        <div className="examples">
+          <span className="examples-label">试一试</span>
+          <button
+            type="button"
+            className="example example--demo"
+            onClick={() => {
+              setView({ kind: 'report', report: demoReport(), demo: true });
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          >
+            示例报告
+            <ArrowUpRight size={12} />
+          </button>
+          {EXAMPLES.map((ex) => (
+            <button
+              key={ex.label}
+              type="button"
+              className="example"
+              onClick={() => {
+                setMode('text');
+                setInput(ex.text);
+              }}
+            >
+              {ex.label}
+              <ArrowUpRight size={12} />
+            </button>
+          ))}
+        </div>
+
+        {!configured ? (
+          <p className="setup-hint">
+            首次使用需要填写你自己的 API Key，
+            <button type="button" className="link-btn" onClick={() => openSettings()}>
+              选择模型
+            </button>
+            。Key 只保存在这台设备。
+          </p>
+        ) : !verified ? (
+          <p className="setup-hint">
+            {preset.name} · {config.model} 还没有测通过，
+            <button type="button" className="link-btn" onClick={() => openSettings(settings.activeId)}>
+              验证一下
+            </button>
+            ——第一次核查前会自动验证，不通过不会开跑。
+          </p>
+        ) : (
+          <p className="setup-hint">
+            快捷键：<kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd> 开始核查，<kbd>⌘</kbd>/<kbd>Ctrl</kbd> +{' '}
+            <kbd>K</kbd> 打开历史。核查可以随时收起，也能同时跑多个。
+          </p>
+        )}
+      </>
+    );
+  }
+
   return (
-    <div className="app">
+    <div className={`app ${tasks.length ? 'app--dock' : ''}`}>
       <TopBar
         settings={settings}
         onOpenSettings={() => openSettings()}
@@ -168,145 +335,30 @@ export default function App() {
         historyCount={histCount}
       />
 
-      <main className={`shell ${phase === 'idle' ? 'shell--idle' : ''}`}>
-        {phase === 'done' && report ? (
-          <ReportView
-            report={report}
-            onReset={reset}
-            demo={isDemo}
-            initialView={new URLSearchParams(window.location.search).get('view') === 'markdown' ? 'markdown' : 'report'}
-          />
-        ) : phase === 'running' ? (
-          <Processing
-            stage={stage}
-            isUrl={mode === 'url'}
-            onCancel={cancel}
-            providerLabel={preset.name}
-            model={config.model}
-          />
-        ) : (
-          <>
-            <section className="intro">
-              <p className="eyebrow">Evidence, not vibes</p>
-              <h1 className="display">
-                把每一句话，
-                <br />
-                <span className="display-em">查到底</span>。
-              </h1>
-              <p className="lede">
-                贴入一段文字，或者一个链接。Veritas 拆解段落、在应用内检索公开来源、逐条比对证据，
-                给出可信度评分、可追溯的引用，以及一份可直接引用的 Markdown 报告。
-              </p>
-
-              <ul className="pillars">
-                <li>
-                  <ListChecks size={15} strokeWidth={1.8} />
-                  逐段判定，而不是一句「真 / 假」
-                </li>
-                <li>
-                  <Fingerprint size={15} strokeWidth={1.8} />
-                  每条陈述都挂到具体来源
-                </li>
-                <li>
-                  <FileCheck2 size={15} strokeWidth={1.8} />
-                  结果可导出为整洁 Markdown
-                </li>
-              </ul>
-            </section>
-
-            {error && (
-              <div className="banner banner--error" role="alert">
-                <AlertCircle size={15} />
-                <div className="banner-body">
-                  <span className="banner-msg">{error.message}</span>
-                  {error.hint && <span className="banner-hint">{error.hint}</span>}
-                </div>
-                <div className="banner-side">
-                  <button type="button" className="banner-action" onClick={() => openSettings(settings.activeId)}>
-                    模型设置
-                  </button>
-                  <button type="button" className="banner-close" onClick={() => setError(null)} aria-label="关闭">
-                    <X size={13} />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <Composer
-              mode={mode}
-              onModeChange={setMode}
-              value={input}
-              onValueChange={setInput}
-              settings={settings}
-              onSettingsChange={patchSettings}
-              onRun={run}
-              busy={false}
-              configured={configured}
-              onOpenSettings={() => openSettings()}
-              onPickProvider={pickProvider}
-              onConfigureProvider={(id) => openSettings(id)}
-            />
-
-            <div className="examples">
-              <span className="examples-label">试一试</span>
-              <button
-                type="button"
-                className="example example--demo"
-                onClick={() => {
-                  setReport(demoReport());
-                  setIsDemo(true);
-                  setPhase('done');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-              >
-                示例报告
-                <ArrowUpRight size={12} />
-              </button>
-              {EXAMPLES.map((ex) => (
-                <button
-                  key={ex.label}
-                  type="button"
-                  className="example"
-                  onClick={() => {
-                    setMode('text');
-                    setInput(ex.text);
-                    setError(null);
-                    setIsDemo(false);
-                  }}
-                >
-                  {ex.label}
-                  <ArrowUpRight size={12} />
-                </button>
-              ))}
-            </div>
-
-            {!configured ? (
-              <p className="setup-hint">
-                首次使用需要填写你自己的 API Key，
-                <button type="button" className="link-btn" onClick={() => openSettings()}>
-                  选择模型
-                </button>
-                。Key 只保存在这台设备。
-              </p>
-            ) : !verified ? (
-              <p className="setup-hint">
-                {preset.name} · {config.model} 还没有测通过，
-                <button type="button" className="link-btn" onClick={() => openSettings(settings.activeId)}>
-                  验证一下
-                </button>
-                ——第一次核查前会自动验证，不通过不会开跑。
-              </p>
-            ) : null}
-          </>
-        )}
-      </main>
+      <main className={`shell ${view.kind === 'home' ? 'shell--idle' : ''}`}>{body}</main>
 
       <footer className="foot">
         <span>Veritas · 核查结果为辅助判断，重要结论请回到原始来源复核</span>
         <span className="foot-dim">
-          {runtimeLabel()} · {STAGE_TEXT.compose} · 由你的模型驱动
+          {runtimeLabel()} · v{__APP_VERSION__} · 由你的模型驱动
         </span>
       </footer>
+
+      <TaskDock
+        tasks={tasks}
+        activeId={view.kind === 'task' ? view.id : null}
+        onOpen={(id) => {
+          setView({ kind: 'task', id });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onPause={pauseTask}
+        onResume={resumeTask}
+        onCancel={cancelTask}
+        onDismiss={(id) => {
+          dismissTask(id);
+        }}
+        onClearFinished={clearFinishedTasks}
+      />
 
       {settingsOpen && (
         <SettingsDialog

@@ -25,6 +25,8 @@ export interface HistoryEntry {
   chars: number;
   excerpt: string;
   evidence?: number;
+  /** 原始输入（截断保存），用于「重新核查」；旧存档可能没有 */
+  input?: string;
   report: Report;
 }
 
@@ -84,6 +86,11 @@ export function historyCount(): number {
   return readRaw().length;
 }
 
+function inputForHistory(report: Report): string | undefined {
+  const text = report.meta.sourceUrl || report.paragraphs.map((p) => p.text).join('\n\n');
+  return text ? text.slice(0, 6000) : undefined;
+}
+
 export function saveHistory(report: Report): HistoryEntry {
   const entry: HistoryEntry = {
     id: `h${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
@@ -97,6 +104,7 @@ export function saveHistory(report: Report): HistoryEntry {
     chars: report.meta.chars,
     excerpt: (report.tldr || report.paragraphs[0]?.summary || '').slice(0, 120),
     evidence: report.meta.evidence?.hits,
+    input: inputForHistory(report),
     report: { ...report, raw: '' },
   };
 

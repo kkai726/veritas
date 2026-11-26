@@ -18,3 +18,6 @@ interface Window {
   };
   Capacitor?: { Plugins?: Record<string, any> };
 }
+
+/** 构建时由 vite.config.ts 注入的版本号 */
+declare const __APP_VERSION__: string;

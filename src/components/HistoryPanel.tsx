@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { AlertTriangle, Clock3, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Clock3, Search, Trash2, X } from 'lucide-react';
 import { clearHistory, deleteHistory, listHistory, type HistoryEntry } from '../lib/history';
 import { bandOf } from '../lib/types';
 import { formatTime } from '../lib/utils';
@@ -13,6 +13,18 @@ export function HistoryPanel({ onOpen, onClose }: Props) {
   const [items, setItems] = useState<HistoryEntry[]>(() => listHistory());
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [q, setQ] = useState('');
+
+  const filtered = useMemo(() => {
+    const key = q.trim().toLowerCase();
+    if (!key) return items;
+    return items.filter((item) =>
+      [item.title, item.excerpt, item.providerName, item.model, item.sourceUrl ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(key),
+    );
+  }, [items, q]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -47,6 +59,24 @@ export function HistoryPanel({ onOpen, onClose }: Props) {
           </button>
         </div>
 
+        {items.length > 0 && (
+          <div className="hist-search">
+            <Search size={13} />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="按标题、结论或模型筛选"
+              spellCheck={false}
+              aria-label="筛选历史"
+            />
+            {q && (
+              <button type="button" className="hist-search-clear" onClick={() => setQ('')} aria-label="清空筛选">
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="dialog-body dialog-body--flush">
           {items.length === 0 ? (
             <div className="hist-empty">
@@ -56,7 +86,7 @@ export function HistoryPanel({ onOpen, onClose }: Props) {
             </div>
           ) : (
             <ul className="hist-list">
-              {items.map((item) => {
+              {filtered.map((item) => {
                 const band = bandOf(item.score);
                 const confirming = confirmId === item.id;
                 return (
@@ -99,11 +129,16 @@ export function HistoryPanel({ onOpen, onClose }: Props) {
               })}
             </ul>
           )}
+          {items.length > 0 && filtered.length === 0 && (
+            <div className="hist-empty hist-empty--sm">
+              <p>没有匹配「{q}」的记录。</p>
+            </div>
+          )}
         </div>
 
         <div className="dialog-foot">
           <span className="dialog-foot-note">
-            {items.length ? `共 ${items.length} 条 · 只存在本机` : '本地存档'}
+            {items.length ? `共 ${items.length} 条${filtered.length !== items.length ? ` · 命中 ${filtered.length}` : ''} · 只存在本机` : '本地存档'}
           </span>
           <div className="dialog-foot-right">
             {items.length > 0 &&

@@ -462,6 +462,12 @@
         margin-top: 28px;
       }
 
+      .cols--three {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 18px;
+        align-items: stretch;
+      }
+
       .panel {
         background: var(--surface);
         border: 1px solid var(--line);
@@ -775,12 +781,12 @@
         <div class="hero-cta">
           <a
             class="btn btn-solid"
-            href="https://github.com/kkai726/veritas/releases/download/v1.1.0/Veritas-Setup-1.1.0-x64.exe"
+            href="https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-Setup-1.2.0-x64.exe"
             >下载 Windows 版</a
           >
           <a
             class="btn btn-ghost"
-            href="https://github.com/kkai726/veritas/releases/download/v1.1.0/Veritas-1.1.0-android.apk"
+            href="https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-1.2.0-android.apk"
             >下载 Android 版</a
           >
           <a class="btn btn-ghost" href="#download">全部产物与校验和</a>
@@ -804,7 +810,7 @@
           <div><b>0</b><small>服务器与数据库</small></div>
           <div><b>6</b><small>内置服务商</small></div>
           <div><b>3</b><small>运行形态：桌面 / 安卓 / 自托管</small></div>
-          <div><b>100%</b><small>报告在本地生成</small></div>
+          <div><b>2</b><small>并行核查上限，其余排队</small></div>
         </div>
       </div>
 
@@ -827,7 +833,7 @@
           <div class="step">
             <i>STEP 02</i>
             <h3>取证</h3>
-            <p>应用自己搜公开来源（360 / DuckDuckGo / 维基），只把命中的句子摘成证据，不让模型花额度去联网。</p>
+            <p>应用自己搜公开来源（360 / DuckDuckGo / 维基），多条查询并发、两个引擎抢答，只把命中的句子摘成证据，不让模型花额度去联网。</p>
           </div>
           <div class="step">
             <i>STEP 03</i>
@@ -850,6 +856,43 @@
           <span class="tag t-mute">无事实主张</span>
         </div>
 
+        <div class="cols cols--three">
+          <div class="panel">
+            <h3>可以暂停</h3>
+            <ul>
+              <li>按下暂停后不再发出任何新请求，也就不会继续花钱</li>
+              <li>正在飞的那个请求会跑完，界面区分「正在暂停」与「已暂停」</li>
+              <li>继续时从停下的一步接着走，已完成的阶段不重跑</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>可以收起</h3>
+            <ul>
+              <li>核查界面整块收起，任务转到底部任务卡继续跑</li>
+              <li>点任务卡任意一条，回到那份进度或报告</li>
+              <li>同时最多跑 2 个，其余排队，前一个结束自动出队</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>可以更快</h3>
+            <ul>
+              <li>查询分批并发、双引擎抢答，命中够了就停</li>
+              <li>正文双通道抢跑（7 秒截止），摘要够用就不下载整页</li>
+              <li>同内容重跑时检索约 6ms：搜索与正文都有内存缓存</li>
+            </ul>
+          </div>
+        </div>
+
+        <figure class="shot" style="margin-top: 22px">
+          <img src="./assets/screenshot-processing.png" alt="Veritas 核查进行中，可暂停与收起" />
+          <figcaption class="cap">进行中 · 阶段与进度可见 · 可暂停、可收起，收起后继续在后台跑</figcaption>
+        </figure>
+
+        <figure class="shot" style="margin-top: 18px">
+          <img src="./assets/screenshot-tasks.png" alt="Veritas 后台任务卡" />
+          <figcaption class="cap">任务卡 · 多个核查并行时逐条查看、暂停或取消，最多 2 个同时跑</figcaption>
+        </figure>
+
         <div class="cols">
           <div class="panel">
             <h3>报告里有什么</h3>
@@ -858,7 +901,7 @@
               <li><b>逐段卡片</b>：原文引用、判定理由、每条主张的支持程度与相关度</li>
               <li><b>来源清单</b>：标题 + 发布机构 + 编号，与正文引用一一对应</li>
               <li><b>核查局限</b>：明确写出本次核查没做到的事</li>
-              <li><b>历史存档</b>：每次核查自动存本机，顶栏「历史」可回看、可逐条删除</li>
+              <li><b>历史存档</b>：自动存本机，可按标题 / 结论 / 模型筛选，点开回到原报告，也能原样重跑</li>
             </ul>
           </div>
           <div class="panel">
@@ -881,7 +924,7 @@
 
         <figure class="shot" style="margin-top: 18px">
           <img src="./assets/screenshot-history.png" alt="Veritas 核查历史" />
-          <figcaption class="cap">历史 · 每次核查自动存档，点开回到原报告，可逐条删除</figcaption>
+          <figcaption class="cap">历史 · 自动存档 + 筛选，点开回到原报告，可逐条删除</figcaption>
         </figure>
       </section>
 
@@ -952,7 +995,7 @@
         <div class="head">
           <span class="no">03</span>
           <h2>下载</h2>
-          <span class="aside">v1.1.0 · 2026-11 · <a
+          <span class="aside">v1.2.0 · 2026-11 · <a
               href="https://github.com/kkai726/veritas/releases"
               style="text-decoration: underline dotted"
               >全部版本</a
@@ -966,33 +1009,33 @@
           <div class="card">
             <span class="k">Windows · 安装版</span>
             <h3>Setup x64</h3>
-            <p class="file">Veritas-Setup-1.1.0-x64.exe</p>
+            <p class="file">Veritas-Setup-1.2.0-x64.exe</p>
             <p class="meta">116 MB · 可选安装目录、生成桌面快捷方式、可卸载</p>
             <a
               class="btn btn-solid"
-              href="https://github.com/kkai726/veritas/releases/download/v1.1.0/Veritas-Setup-1.1.0-x64.exe"
+              href="https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-Setup-1.2.0-x64.exe"
               >下载</a
             >
           </div>
           <div class="card">
             <span class="k">Windows · 免安装</span>
             <h3>Portable x64</h3>
-            <p class="file">Veritas-Portable-1.1.0-x64.exe</p>
+            <p class="file">Veritas-Portable-1.2.0-x64.exe</p>
             <p class="meta">106 MB · 单文件双击即用，放 U 盘也能跑</p>
             <a
               class="btn btn-ghost"
-              href="https://github.com/kkai726/veritas/releases/download/v1.1.0/Veritas-Portable-1.1.0-x64.exe"
+              href="https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-Portable-1.2.0-x64.exe"
               >下载</a
             >
           </div>
           <div class="card">
             <span class="k">Android</span>
             <h3>APK arm64</h3>
-            <p class="file">Veritas-1.1.0-android.apk</p>
-            <p class="meta">198 KB · Android 7.0+ · 调试签名，需允许未知来源</p>
+            <p class="file">Veritas-1.2.0-android.apk</p>
+            <p class="meta">206 KB · Android 7.0+ · 调试签名，需允许未知来源</p>
             <a
               class="btn btn-ghost"
-              href="https://github.com/kkai726/veritas/releases/download/v1.1.0/Veritas-1.1.0-android.apk"
+              href="https://github.com/kkai726/veritas/releases/download/v1.2.0/Veritas-1.2.0-android.apk"
               >下载</a
             >
           </div>

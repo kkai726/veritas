@@ -42,4 +42,8 @@ android/app/src/main/assets/public/
 *.keystore
 release-win/
 release-v11/
+release-v12/
+release-v12c/
+release-v12d/
+release-v12b/
 _old_release_1/

@@ -24,6 +24,8 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** 只在应用内检索失败时，才允许模型自己联网（OpenAI web_search） */
   allowModelSearch?: boolean;
+  /** 输出预算：深度越高留得越多，赶时间时先砍这里 */
+  maxTokens?: number;
 }
 
 const REQUEST_TIMEOUT = 240_000;
@@ -189,7 +191,7 @@ async function runOpenAIResponses(opts: RunOptions, notes: string[]): Promise<Ru
       instructions: system,
       input: user,
       store: false,
-      max_output_tokens: 8000,
+      max_output_tokens: opts.maxTokens ?? 8000,
     };
     if (withTools) {
       body.tools = [{ type: 'web_search' }];
@@ -294,7 +296,8 @@ async function runChat(opts: RunOptions, notes: string[]): Promise<RunResult> {
     }
   };
 
-  let data = await call(true, 8000);
+  const budget = opts.maxTokens ?? 8000;
+  let data = await call(true, budget);
   let choice = data?.choices?.[0];
   let text = chatText(choice?.message?.content);
 
@@ -306,7 +309,7 @@ async function runChat(opts: RunOptions, notes: string[]): Promise<RunResult> {
         ? '模型输出在额度上限处被截断（推理过程占用了大部分 token），已提高额度重试。'
         : '模型首次返回为空，已自动重试一次。',
     );
-    data = await call(true, truncated ? 24_000 : 16_000);
+    data = await call(true, truncated ? Math.max(24_000, budget * 3) : Math.max(16_000, budget * 2));
     choice = data?.choices?.[0];
     text = chatText(choice?.message?.content);
   }

@@ -10,6 +10,7 @@ import zipfile
 
 def main() -> int:
     apk, root = sys.argv[1], sys.argv[2]
+    prefix = (sys.argv[3] if len(sys.argv) > 3 else "assets/public").strip("/")
     if not os.path.isdir(root):
         print(f"assets 目录不存在：{root}")
         return 1
@@ -19,7 +20,7 @@ def main() -> int:
             for name in filenames:
                 full = os.path.join(dirpath, name)
                 rel = os.path.relpath(full, root).replace("\\", "/")
-                zf.write(full, "assets/" + rel)
+                zf.write(full, prefix + "/" + rel)
     return 0
 
 

@@ -13,6 +13,8 @@ interface Props {
   onRun: () => void;
   busy: boolean;
   configured: boolean;
+  /** 后台正在跑的任务数，用来提示「新的会排队」 */
+  runningCount?: number;
   onOpenSettings: () => void;
   onPickProvider: (id: ProviderId) => void;
   onConfigureProvider: (id: ProviderId) => void;
@@ -34,6 +36,7 @@ export function Composer({
   onRun,
   busy,
   configured,
+  runningCount = 0,
   onOpenSettings,
   onPickProvider,
   onConfigureProvider,
@@ -128,7 +131,9 @@ export function Composer({
             onConfigure={onConfigureProvider}
             disabled={busy}
           />
-          <span className="counter">{chars ? `${chars} 字` : '⌘ + Enter'}</span>
+          <span className="counter">
+            {runningCount > 0 ? `${runningCount} 个在跑 · 新的会排队` : chars ? `${chars} 字` : '⌘ + Enter'}
+          </span>
           <button className="cta" onClick={submit} disabled={busy || (configured && chars < 20)} type="button">
             {busy && <Loader2 className="spin" size={15} />}
             {busy ? '核查中' : configured ? '开始核查' : '配置模型'}
